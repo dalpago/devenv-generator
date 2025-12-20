@@ -1,0 +1,75 @@
+# Mirustech Standard Python Development Environment
+# Based on ~/.claude/CLAUDE.md guidelines
+
+name: mirustech
+description: "Standard Mirustech Python development environment with Claude Code YOLO mode"
+
+python:
+  version: "3.12"
+  packages:
+    # Testing
+    - pytest
+    - pytest-cov
+    - hypothesis
+    # Data processing
+    - polars
+    - pyarrow
+    # CLI & Logging
+    - rich-click
+    - structlog
+    # Validation
+    - pydantic
+    - pydantic-settings
+    # ORM & Database
+    - sqlalchemy
+    - alembic
+    # API
+    - fastapi
+    - uvicorn
+
+uvx_tools:
+  - pre-commit
+  - ruff
+  - deptry
+  - mypy
+
+system_packages:
+  # Version control
+  - git
+  # Download tools
+  - curl
+  - wget
+  # Editors
+  - vim
+  # Shell
+  - zsh
+  # Build tools
+  - make
+  - build-essential
+  # Search tools
+  - ripgrep
+  - fd-find
+  # Utilities
+  - jq
+  - tree
+  - less
+
+github_releases:
+  # Better git diffs
+  delta: "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_amd64.deb"
+  # Better cat with syntax highlighting
+  bat: "https://github.com/sharkdp/bat/releases/download/v0.24.0/bat_0.24.0_amd64.deb"
+
+node_packages:
+  - "@anthropic-ai/claude-code"
+
+environment: {}
+
+network:
+  mode: full
+  allowed_domains: []
+
+mounts:
+  gitconfig: false
+  ssh_keys: false
+  claude_config: volume
