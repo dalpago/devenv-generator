@@ -1,5 +1,7 @@
 """Pydantic models for devenv-generator configuration."""
 
+import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -160,3 +162,94 @@ class SandboxConfig(BaseModel):
         default=False,
         description="Mount host ~/.claude for CLAUDE.md, MCP servers, and settings",
     )
+
+
+def sanitize_project_name(name: str) -> str:
+    """Sanitize a project name for use in container registry.
+
+    Container registries typically require lowercase alphanumeric names
+    with dashes. This function converts project names to be registry-compliant.
+
+    Args:
+        name: The original project name.
+
+    Returns:
+        A sanitized name suitable for container registry use.
+
+    Examples:
+        >>> sanitize_project_name("MyProject")
+        'myproject'
+        >>> sanitize_project_name("my_project")
+        'my-project'
+        >>> sanitize_project_name("my project")
+        'my-project'
+        >>> sanitize_project_name("123project")
+        'devenv-123project'
+    """
+    # Convert to lowercase
+    result = name.lower()
+
+    # Replace underscores and spaces with dashes
+    result = result.replace("_", "-").replace(" ", "-")
+
+    # Remove any characters that aren't alphanumeric or dash
+    result = re.sub(r"[^a-z0-9-]", "", result)
+
+    # Collapse multiple dashes into one
+    result = re.sub(r"-+", "-", result)
+
+    # Strip leading/trailing dashes
+    result = result.strip("-")
+
+    # If name starts with a number, prepend 'devenv-'
+    if result and result[0].isdigit():
+        result = f"devenv-{result}"
+
+    # If empty after sanitization, use a default
+    if not result:
+        result = "devenv-project"
+
+    return result
+
+
+@dataclass(frozen=True)
+class ImageSpec:
+    """Immutable value object for container image specification.
+
+    Represents a fully qualified container image reference including
+    registry, project name, and tag.
+
+    Attributes:
+        registry: The container registry URL (e.g., 'git.mirus-tech.com').
+        project: The sanitized project name.
+        tag: The image tag (e.g., git SHA or 'latest').
+    """
+
+    registry: str
+    project: str
+    tag: str
+
+    @property
+    def full_name(self) -> str:
+        """Get the fully qualified image name.
+
+        Returns:
+            Full image reference in format 'registry/project:tag'.
+
+        Example:
+            >>> spec = ImageSpec('git.mirus-tech.com', 'myproject', 'abc123')
+            >>> spec.full_name
+            'git.mirus-tech.com/myproject:abc123'
+        """
+        return f"{self.registry}/{self.project}:{self.tag}"
+
+    def with_tag(self, new_tag: str) -> "ImageSpec":
+        """Create a new ImageSpec with a different tag.
+
+        Args:
+            new_tag: The new tag to use.
+
+        Returns:
+            A new ImageSpec with the updated tag.
+        """
+        return ImageSpec(registry=self.registry, project=self.project, tag=new_tag)
