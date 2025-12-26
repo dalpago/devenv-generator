@@ -25,19 +25,19 @@ That's it. This will:
 devenv
 
 # Specific project
-devenv ~/dev/my-project
+devenv run ~/dev/my-project
 
 # Drop to shell instead of Claude
-devenv --shell
+devenv run --shell
 
 # Run in background
-devenv -d
+devenv run -d
 
 # Multiple projects (second is read-only)
-devenv ~/proj1 ~/proj2:ro
+devenv run ~/proj1 ~/proj2:ro
 
 # Copy-on-write (changes discarded on exit)
-devenv ~/proj:cow
+devenv run ~/proj:cow
 ```
 
 ## Container Management
@@ -87,13 +87,13 @@ Container files are stored in `~/.local/share/devenv-sandboxes/<project>/`.
 ## Options
 
 ```
-devenv [PATHS...] [OPTIONS]
+devenv run [PATHS...] [OPTIONS]
 
 Options:
   --shell, -s         Drop to shell instead of starting Claude
   --detach, -d        Run in background
   --python VERSION    Override Python version
-  --profile, -p NAME  Use a specific profile (default: auto-detect)
+  --profile, -p NAME  Use a specific profile (default: mirustech)
   --no-host-config    Don't mount ~/.claude (isolated Claude config)
   -o, --output PATH   Custom output directory
   -n, --name NAME     Custom sandbox name
