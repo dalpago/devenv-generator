@@ -1,5 +1,8 @@
 """CLI entry point for devenv-generator."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import rich_click as click
@@ -28,6 +31,78 @@ structlog.configure(
 console = Console()
 logger = structlog.get_logger()
 
+# Default sandbox location
+SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
+
+
+def _get_sandbox_dir(name: str) -> Path:
+    """Get the sandbox directory for a given name."""
+    return SANDBOXES_DIR / name
+
+
+def _list_sandboxes() -> list[tuple[str, Path, bool]]:
+    """List all sandboxes with their running status.
+
+    Returns list of (name, path, is_running) tuples.
+    """
+    if not SANDBOXES_DIR.exists():
+        return []
+
+    sandboxes = []
+    for path in SANDBOXES_DIR.iterdir():
+        if path.is_dir() and (path / "docker-compose.yml").exists():
+            name = path.name
+            is_running = _is_sandbox_running(name, path)
+            sandboxes.append((name, path, is_running))
+
+    return sorted(sandboxes, key=lambda x: x[0])
+
+
+def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
+    """Check if a sandbox container is running."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "-p", name, "ps", "-q"],
+            cwd=sandbox_dir,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return bool(result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+def _detect_python_version(project_path: Path) -> str | None:
+    """Auto-detect Python version from project files."""
+    # Check .python-version
+    python_version_file = project_path / ".python-version"
+    if python_version_file.exists():
+        version = python_version_file.read_text().strip()
+        if version:
+            return version
+
+    # Check pyproject.toml
+    pyproject_file = project_path / "pyproject.toml"
+    if pyproject_file.exists():
+        try:
+            import tomllib
+            with open(pyproject_file, "rb") as f:
+                data = tomllib.load(f)
+
+            # Try requires-python
+            requires_python = data.get("project", {}).get("requires-python", "")
+            if requires_python:
+                # Parse ">=3.12" or ">=3.12,<4" etc.
+                import re
+                match = re.search(r"(\d+\.\d+)", requires_python)
+                if match:
+                    return match.group(1)
+        except Exception:
+            pass
+
+    return None
+
 
 def _load_profile(profile: str) -> ProfileConfig:
     """Load profile from file or bundled profiles."""
@@ -47,31 +122,150 @@ def _load_profile(profile: str) -> ProfileConfig:
         raise SystemExit(1)
 
 
+def _ensure_docker_running() -> bool:
+    """Ensure Docker is running, starting Docker Desktop if needed."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return True
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Try to start Docker Desktop (macOS)
+    console.print("[dim]Starting Docker Desktop...[/dim]")
+    try:
+        subprocess.run(["open", "-a", "Docker"], capture_output=True, timeout=5)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Wait for Docker to start
+    import time
+    for _ in range(30):
+        time.sleep(2)
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    return False
+
+
+def _run_sandbox(
+    sandbox_name: str,
+    sandbox_dir: Path,
+    detach: bool = False,
+    shell: bool = False,
+) -> None:
+    """Run a sandbox container."""
+    if not _ensure_docker_running():
+        console.print("[red]Docker is not available. Please start Docker.[/red]")
+        raise SystemExit(1)
+
+    # Build if needed
+    console.print("[dim]Building container...[/dim]")
+    build_result = subprocess.run(
+        ["docker", "compose", "-p", sandbox_name, "build"],
+        cwd=sandbox_dir,
+        capture_output=True,
+        text=True,
+    )
+    if build_result.returncode != 0:
+        console.print(f"[red]Build failed:[/red]\n{build_result.stderr}")
+        raise SystemExit(1)
+
+    if detach:
+        # Start in background
+        console.print(f"[dim]Starting {sandbox_name} in background...[/dim]")
+        result = subprocess.run(
+            ["docker", "compose", "-p", sandbox_name, "up", "-d"],
+            cwd=sandbox_dir,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Failed to start:[/red]\n{result.stderr}")
+            raise SystemExit(1)
+
+        console.print()
+        console.print(f"[bold green]✓ Sandbox running:[/bold green] {sandbox_name}")
+        console.print()
+        console.print("[bold]Attach:[/bold]")
+        console.print(f"  devenv attach {sandbox_name}")
+        console.print()
+        console.print("[bold]Stop:[/bold]")
+        console.print(f"  devenv stop {sandbox_name}")
+    else:
+        # Run in foreground (exec into container)
+        console.print()
+        if shell:
+            console.print(f"[bold green]Starting shell in {sandbox_name}...[/bold green]")
+            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev", "/bin/zsh"]
+        else:
+            console.print(f"[bold green]Starting Claude Code in {sandbox_name}...[/bold green]")
+            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev"]
+
+        console.print("[dim]Press Ctrl+D to exit[/dim]")
+        console.print()
+
+        # Replace current process with docker compose
+        os.execvp(cmd[0], cmd)
+
+
 @click.group(invoke_without_command=True)
 @click.argument("paths", nargs=-1, type=click.Path())
 @click.option(
     "--profile",
     "-p",
     default="mirustech",
-    help="Profile name or path to YAML file",
+    help="Profile name or path to YAML file (optional, auto-detects from project)",
 )
 @click.option(
     "--output",
     "-o",
     default=None,
-    help="Output directory",
+    help="Output directory for sandbox files",
 )
 @click.option(
     "--name",
     "-n",
     default=None,
-    help="Sandbox/project name",
+    help="Sandbox name",
 )
 @click.option(
     "--no-host-config",
     is_flag=True,
     default=False,
     help="Don't mount host ~/.claude (isolate from host Claude config)",
+)
+@click.option(
+    "--detach",
+    "-d",
+    is_flag=True,
+    default=False,
+    help="Run container in background",
+)
+@click.option(
+    "--shell",
+    "-s",
+    is_flag=True,
+    default=False,
+    help="Drop to shell instead of starting Claude",
+)
+@click.option(
+    "--python",
+    "python_version",
+    default=None,
+    help="Override Python version",
 )
 @click.version_option()
 @click.pass_context
@@ -82,15 +276,18 @@ def main(
     output: str | None,
     name: str | None,
     no_host_config: bool,
+    detach: bool,
+    shell: bool,
+    python_version: str | None,
 ) -> None:
-    """Generate Docker-based development environments for Claude Code.
+    """Run Claude Code on your projects in an isolated Docker container.
 
     \b
     Usage:
-        devenv                      # Mount current directory
-        devenv .                    # Same as above
-        devenv ~/dev/myproject      # Mount specific project
-        devenv ~/proj1 ~/proj2:ro   # Multiple projects (second is read-only)
+        devenv                      # Current directory, starts Claude
+        devenv ~/dev/myproject      # Specific project
+        devenv --shell              # Drop to shell instead of Claude
+        devenv -d                   # Run in background
 
     \b
     Mount modes:
@@ -99,11 +296,11 @@ def main(
         /path:cow       Copy-on-write (changes discarded on exit)
 
     \b
-    Examples:
-        devenv                              # Quick start on current project
-        devenv --no-host-config             # Isolated Claude config
-        devenv ~/proj -o ~/sandboxes/proj   # Custom output location
-        devenv new ~/dev/new-app            # Create new project (rare)
+    Container management:
+        devenv attach [name]        # Attach to running sandbox
+        devenv stop [name]          # Stop running sandbox
+        devenv status               # List sandboxes
+        devenv rm [name]            # Remove sandbox
     """
     # If a subcommand was invoked, let it handle things
     if ctx.invoked_subcommand is not None:
@@ -135,12 +332,23 @@ def main(
 
     # Determine output directory
     if output is None:
-        output_path = Path(f"~/.local/share/devenv-sandboxes/{sandbox_name}").expanduser()
+        output_path = _get_sandbox_dir(sandbox_name)
     else:
         output_path = Path(output).resolve()
 
+    # Auto-detect Python version if not specified
+    if python_version is None:
+        detected = _detect_python_version(mount_specs[0].host_path)
+        if detected:
+            python_version = detected
+            console.print(f"[dim]Detected Python:[/dim] {python_version}")
+
     # Load profile
     config = _load_profile(profile)
+
+    # Override Python version if detected or specified
+    if python_version:
+        config.python.version = python_version
 
     # Generate sandbox
     generator = SandboxGenerator(
@@ -149,20 +357,144 @@ def main(
         sandbox_name=sandbox_name,
         use_host_claude_config=not no_host_config,
     )
-    generated = generator.generate(output_path)
+    generator.generate(output_path)
 
     console.print()
     console.print(f"[bold green]✓ Sandbox ready:[/bold green] {sandbox_name}")
-    console.print()
 
-    console.print("[bold]Mounts:[/bold]")
+    console.print("[dim]Mounts:[/dim]")
     for spec in mount_specs:
-        mode_str = {"rw": "", "ro": " [dim](read-only)[/dim]", "cow": " [dim](copy-on-write)[/dim]"}[spec.mode]
+        mode_str = {"rw": "", "ro": " (ro)", "cow": " (cow)"}[spec.mode]
         console.print(f"  {spec.host_path} → {spec.container_path}{mode_str}")
 
+    # Run the sandbox
+    _run_sandbox(sandbox_name, output_path, detach=detach, shell=shell)
+
+
+@main.command("attach")
+@click.argument("name", required=False)
+def attach_sandbox(name: str | None) -> None:
+    """Attach to a running sandbox.
+
+    If no name is provided, attaches to the sandbox matching the current directory name.
+    """
+    if name is None:
+        name = Path.cwd().name
+
+    sandbox_dir = _get_sandbox_dir(name)
+
+    if not sandbox_dir.exists():
+        console.print(f"[red]Sandbox not found:[/red] {name}")
+        console.print("Use 'devenv status' to list available sandboxes")
+        raise SystemExit(1)
+
+    if not _is_sandbox_running(name, sandbox_dir):
+        console.print(f"[yellow]Sandbox is not running:[/yellow] {name}")
+        console.print(f"Start it with: devenv {name}")
+        raise SystemExit(1)
+
+    console.print(f"[bold green]Attaching to {name}...[/bold green]")
+    console.print("[dim]Press Ctrl+P, Ctrl+Q to detach[/dim]")
     console.print()
-    console.print("[bold]Run:[/bold]")
-    console.print(f"  cd {output_path} && docker compose run --rm dev")
+
+    # Exec into the running container
+    os.execvp(
+        "docker",
+        ["docker", "compose", "-p", name, "exec", "dev", "/bin/zsh"],
+    )
+
+
+@main.command("stop")
+@click.argument("name", required=False)
+def stop_sandbox(name: str | None) -> None:
+    """Stop a running sandbox.
+
+    If no name is provided, stops the sandbox matching the current directory name.
+    """
+    if name is None:
+        name = Path.cwd().name
+
+    sandbox_dir = _get_sandbox_dir(name)
+
+    if not sandbox_dir.exists():
+        console.print(f"[red]Sandbox not found:[/red] {name}")
+        raise SystemExit(1)
+
+    console.print(f"[dim]Stopping {name}...[/dim]")
+    result = subprocess.run(
+        ["docker", "compose", "-p", name, "down"],
+        cwd=sandbox_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode == 0:
+        console.print(f"[bold green]✓ Stopped:[/bold green] {name}")
+    else:
+        console.print(f"[red]Failed to stop:[/red]\n{result.stderr}")
+        raise SystemExit(1)
+
+
+@main.command("status")
+def status() -> None:
+    """List all sandboxes and their status."""
+    sandboxes = _list_sandboxes()
+
+    if not sandboxes:
+        console.print("[dim]No sandboxes found.[/dim]")
+        console.print("Create one with: devenv /path/to/project")
+        return
+
+    table = Table(title="Sandboxes")
+    table.add_column("Name", style="cyan")
+    table.add_column("Status")
+    table.add_column("Path", style="dim")
+
+    for name, path, is_running in sandboxes:
+        status_str = "[green]running[/green]" if is_running else "[dim]stopped[/dim]"
+        table.add_row(name, status_str, str(path))
+
+    console.print(table)
+
+
+@main.command("rm")
+@click.argument("name", required=False)
+@click.option("--force", "-f", is_flag=True, help="Force removal even if running")
+def remove_sandbox(name: str | None, force: bool) -> None:
+    """Remove a sandbox.
+
+    If no name is provided, removes the sandbox matching the current directory name.
+    """
+    if name is None:
+        name = Path.cwd().name
+
+    sandbox_dir = _get_sandbox_dir(name)
+
+    if not sandbox_dir.exists():
+        console.print(f"[red]Sandbox not found:[/red] {name}")
+        raise SystemExit(1)
+
+    # Check if running
+    if _is_sandbox_running(name, sandbox_dir):
+        if not force:
+            console.print(f"[yellow]Sandbox is running:[/yellow] {name}")
+            console.print("Stop it first with: devenv stop")
+            console.print("Or use --force to stop and remove")
+            raise SystemExit(1)
+
+        # Stop first
+        console.print(f"[dim]Stopping {name}...[/dim]")
+        subprocess.run(
+            ["docker", "compose", "-p", name, "down", "-v"],
+            cwd=sandbox_dir,
+            capture_output=True,
+        )
+
+    # Remove the directory
+    import shutil
+    shutil.rmtree(sandbox_dir)
+
+    console.print(f"[bold green]✓ Removed:[/bold green] {name}")
 
 
 @main.command("new")
@@ -361,7 +693,7 @@ def generate(ctx: click.Context, profile: str, output: str, project_name: str | 
 @click.option("--profile", "-p", default="mirustech")
 @click.option("--use-host-claude-config", is_flag=True, default=False)
 @click.pass_context
-def sandbox(
+def sandbox_cmd(
     ctx: click.Context,
     mounts: tuple[str, ...],
     sandbox_name: str | None,
@@ -371,7 +703,6 @@ def sandbox(
 ) -> None:
     """[Deprecated] Just use 'devenv /path/to/project' instead."""
     console.print("[yellow]Note: 'devenv sandbox' is deprecated. Just use 'devenv /path' instead.[/yellow]")
-    # Invoke main with the paths
     ctx.invoke(
         main,
         paths=mounts,
@@ -379,6 +710,9 @@ def sandbox(
         output=output,
         name=sandbox_name,
         no_host_config=not use_host_claude_config,
+        detach=False,
+        shell=False,
+        python_version=None,
     )
 
 
