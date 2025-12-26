@@ -34,10 +34,10 @@ class NetworkConfig(BaseModel):
 class MountsConfig(BaseModel):
     """Mount configuration for the container."""
 
-    gitconfig: bool = Field(default=False, description="Mount host ~/.gitconfig")
+    gitconfig: bool = Field(default=True, description="Mount host ~/.gitconfig")
     ssh_keys: bool = Field(default=False, description="Mount host ~/.ssh")
     claude_config: Literal["volume", "bind", "none"] = Field(
-        default="volume",
+        default="bind",
         description="How to persist Claude config: volume (Docker), bind (host), none",
     )
 
