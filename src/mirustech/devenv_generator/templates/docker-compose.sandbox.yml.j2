@@ -17,6 +17,9 @@
 
 services:
   dev:
+{% if image_spec %}
+    image: {{ image_spec.full_name }}
+{% endif %}
     build:
       context: .devcontainer
       dockerfile: Dockerfile
