@@ -1,45 +1,90 @@
 # devenv-generator
 
-Generate Docker-based development environments for Claude Code YOLO mode.
+Run Claude Code on your projects in an isolated Docker container.
 
-## Installation
+## Quick Start
 
 ```bash
-# Install with uv
-uv pip install devenv-generator
+# Install
+uv tool install devenv-generator
 
-# Or install from source
-git clone https://github.com/mirustech/devenv-generator
-cd devenv-generator
-uv pip install -e .
+# Run on current project
+devenv
 ```
+
+That's it. This will:
+1. Detect your Python version from the project
+2. Build a container with Claude Code and dev tools
+3. Install your project dependencies (`uv sync`)
+4. Start Claude Code in YOLO mode
 
 ## Usage
 
-### Generate from default profile
-
 ```bash
-# Generate in current directory
-devenv generate
+# Current directory
+devenv
 
-# Generate in specific directory
-devenv generate --output ./my-project
+# Specific project
+devenv ~/dev/my-project
 
-# Use custom project name
-devenv generate --output ./my-project --project-name my-awesome-project
+# Multiple projects (second is read-only)
+devenv ~/proj1 ~/proj2:ro
+
+# Drop to shell instead of Claude
+devenv --shell
+
+# Copy-on-write mode (changes discarded on exit)
+devenv ~/proj:cow
 ```
 
-### Use custom profile
+## Mount Modes
+
+| Mode | Description |
+|------|-------------|
+| `/path` or `/path:rw` | Read-write (default) — changes persist |
+| `/path:ro` | Read-only — safe exploration |
+| `/path:cow` | Copy-on-write — changes discarded on exit |
+
+## What's in the Container
+
+- **Python** (auto-detected from your project, or 3.12)
+- **Claude Code** with YOLO mode enabled
+- **uv** for fast dependency management
+- **Shell**: zsh with syntax highlighting
+- **Search**: ripgrep (`rg`), fd
+- **Git tools**: delta (better diffs), bat (syntax highlighting)
+- **Utilities**: jq, yq, tree, curl
+
+## How It Works
+
+1. **Auto-detects** Python version from `.python-version` or `pyproject.toml`
+2. **Mounts** your project at `/workspace/<project-name>`
+3. **Mounts** your `~/.claude` for OAuth authentication and settings
+4. **Runs** `uv sync` to install project dependencies
+5. **Starts** Claude Code with `--dangerously-skip-permissions`
+
+Container files are stored in `~/.local/share/devenv-sandboxes/<project>/`.
+
+## Options
 
 ```bash
-# Generate from profile file
-devenv generate --profile ./my-profile.yaml
+devenv [PATHS...] [OPTIONS]
 
-# Override Python version
-devenv generate --profile mirustech --python-version 3.13
+Options:
+  --shell              Drop to shell instead of starting Claude
+  --no-host-config     Don't mount ~/.claude (isolated Claude config)
+  --python VERSION     Override Python version
+  --profile, -p NAME   Use a specific profile (default: auto-detect from project)
+  -o, --output PATH    Custom output directory for sandbox files
+  -n, --name NAME      Custom sandbox name
 ```
 
-### Manage profiles
+## Profiles
+
+For existing projects, the container auto-detects Python version and installs
+dependencies from your project. Profiles are optional overrides.
+
+For new projects (`devenv new`), profiles define the starting environment.
 
 ```bash
 # List available profiles
@@ -48,98 +93,27 @@ devenv profiles list
 # Show profile details
 devenv profiles show mirustech
 
-# Create new profile template
-devenv profiles create my-custom-profile
+# Create custom profile
+devenv profiles create my-profile
 ```
 
-## Generated Files
+Profiles are YAML files defining Python version, packages, and dev tools.
+Custom profiles live in `~/.config/devenv-generator/profiles/`.
 
-The generator creates:
+## Creating New Projects
 
-```
-your-project/
-├── .devcontainer/
-│   ├── Dockerfile        # Full dev environment
-│   ├── devcontainer.json # VS Code integration
-│   └── init-env.sh       # Post-create setup
-└── docker-compose.yml    # CLI-first usage
-```
-
-## Running the Container
-
-### Docker Compose (recommended)
+For creating a fresh project (not mounting existing code):
 
 ```bash
-docker-compose run --rm dev
-
-# Inside container
-claude --dangerously-skip-permissions
+devenv new ~/dev/my-new-app
 ```
 
-### Direct Docker
+This creates the project directory with Docker and VS Code devcontainer configs.
 
-```bash
-docker build -t my-dev .devcontainer/
-docker run -it --rm \
-  -v $(pwd):/workspace \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  my-dev
-```
+## Requirements
 
-### VS Code Dev Containers
-
-1. Install the "Dev Containers" extension
-2. Open the project folder
-3. Click "Reopen in Container"
-
-## Profile Format
-
-Profiles are YAML files:
-
-```yaml
-name: my-profile
-description: "My custom development environment"
-
-python:
-  version: "3.12"
-  packages:
-    - pytest
-    - polars
-
-uvx_tools:
-  - pre-commit
-  - ruff
-  - mypy
-
-system_packages:
-  - git
-  - vim
-  - zsh
-
-node_packages:
-  - "@anthropic-ai/claude-code"
-
-environment:
-  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
-
-network:
-  mode: full  # full, restricted, or none
-
-mounts:
-  gitconfig: false
-  ssh_keys: false
-  claude_config: volume  # volume, bind, or none
-```
-
-## Default Profile: mirustech
-
-The bundled `mirustech` profile includes:
-
-- **Python 3.12** with pytest, polars, pydantic, structlog
-- **Dev tools**: pre-commit, ruff, deptry, mypy (via uvx)
-- **Shell**: zsh with delta (git diffs), bat (syntax highlighting)
-- **Search**: ripgrep (rg), fd
-- **Claude Code CLI** for YOLO mode
+- Docker (will auto-start Docker Desktop on macOS if needed)
+- Claude Code configured on host (`~/.claude` with OAuth credentials)
 
 ## License
 
