@@ -608,6 +608,90 @@ def stop_sandbox(name: str | None) -> None:
         raise SystemExit(1)
 
 
+@main.command("start")
+@click.argument("name", required=False)
+@click.option(
+    "--detach",
+    "-d",
+    is_flag=True,
+    default=False,
+    help="Run container in background",
+)
+@click.option(
+    "--shell",
+    "-s",
+    is_flag=True,
+    default=False,
+    help="Drop to shell instead of starting Claude",
+)
+def start_sandbox(name: str | None, detach: bool, shell: bool) -> None:
+    """Start an existing sandbox without regenerating config.
+
+    If no name is provided, starts the sandbox matching the current directory name.
+
+    \b
+    Examples:
+        devenv start myproject      # Start existing sandbox
+        devenv start myproject -d   # Start in background
+        devenv start myproject -s   # Start with shell
+    """
+    if name is None:
+        name = Path.cwd().name
+
+    sandbox_dir = _get_sandbox_dir(name)
+
+    if not sandbox_dir.exists():
+        console.print(f"[red]Sandbox not found:[/red] {name}")
+        console.print(f"Create it with: devenv run {name}")
+        raise SystemExit(1)
+
+    if not (sandbox_dir / "docker-compose.yml").exists():
+        console.print(f"[red]No docker-compose.yml in sandbox:[/red] {name}")
+        console.print(f"Regenerate with: devenv run {name}")
+        raise SystemExit(1)
+
+    if _is_sandbox_running(name, sandbox_dir):
+        console.print(f"[yellow]Sandbox already running:[/yellow] {name}")
+        console.print(f"Attach with: devenv attach {name}")
+        raise SystemExit(1)
+
+    console.print(f"[bold green]Starting {name}...[/bold green]")
+    _run_sandbox(name, sandbox_dir, detach=detach, shell=shell, skip_build=False)
+
+
+@main.command("cd")
+@click.argument("name", required=False)
+def cd_sandbox(name: str | None) -> None:
+    """Spawn a subshell in the sandbox directory.
+
+    If no name is provided, uses the sandbox matching the current directory name.
+
+    \b
+    Examples:
+        devenv cd myproject    # Opens shell in ~/.local/share/devenv-sandboxes/myproject
+        devenv cd              # Uses current directory name
+    """
+    if name is None:
+        name = Path.cwd().name
+
+    sandbox_dir = _get_sandbox_dir(name)
+
+    if not sandbox_dir.exists():
+        console.print(f"[red]Sandbox not found:[/red] {name}")
+        console.print(f"Create it with: devenv run {name}")
+        raise SystemExit(1)
+
+    # Get user's shell
+    shell = os.environ.get("SHELL", "/bin/bash")
+
+    console.print(f"[dim]Entering {sandbox_dir}[/dim]")
+    console.print("[dim]Type 'exit' to return[/dim]")
+
+    # Spawn subshell in sandbox directory
+    os.chdir(sandbox_dir)
+    os.execvp(shell, [shell])
+
+
 @main.command("status")
 def status() -> None:
     """List all sandboxes and their status."""
