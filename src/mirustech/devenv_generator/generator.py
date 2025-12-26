@@ -320,7 +320,7 @@ class SandboxGenerator:
         profile: ProfileConfig,
         mounts: list[MountSpec],
         sandbox_name: str,
-        use_host_claude_config: bool = False,
+        use_host_claude_config: bool = True,
         image_spec: ImageSpec | None = None,
     ) -> None:
         """Initialize the sandbox generator.

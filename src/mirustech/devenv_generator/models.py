@@ -159,7 +159,7 @@ class SandboxConfig(BaseModel):
     )
     profile: ProfileConfig = Field(..., description="Profile configuration")
     use_host_claude_config: bool = Field(
-        default=False,
+        default=True,
         description="Mount host ~/.claude for CLAUDE.md, MCP servers, and settings",
     )
 

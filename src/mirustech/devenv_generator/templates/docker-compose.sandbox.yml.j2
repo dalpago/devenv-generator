@@ -56,6 +56,8 @@ services:
       - ANTHROPIC_AUTH_TOKEN
       # Skip permission prompts and warning dialog (sandbox is isolated)
       - IS_SANDBOX=1
+      # Default to Opus model (overrides any settings.json changes)
+      - ANTHROPIC_MODEL=opus
       # GPG agent forwarding (auto-started by devenv command)
       - GPG_AGENT_PORT=9876
       - GNUPGHOME=/tmp/gnupg-runtime
