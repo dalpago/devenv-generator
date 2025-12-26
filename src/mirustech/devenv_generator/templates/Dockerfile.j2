@@ -87,6 +87,30 @@ RUN echo '{"permissions":{"allow":["Bash(*)","Read","Write","Edit","Glob","Grep"
 RUN cp -r /root/.local/bin/* /home/$USERNAME/.local/bin/ \
     && chown -R $USERNAME:$USERNAME /home/$USERNAME/.local
 
+# Create startup script that runs uv sync and then the command
+RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
+#!/bin/sh
+set -e
+
+# Find the first workspace directory with pyproject.toml
+for dir in /workspace/*; do
+    if [ -d "$dir" ] && [ -f "$dir/pyproject.toml" ]; then
+        cd "$dir"
+        echo "Installing dependencies in $dir..."
+        uv sync --quiet 2>/dev/null || true
+        break
+    fi
+done
+
+# If no command provided, start Claude in YOLO mode
+if [ $# -eq 0 ]; then
+    exec claude --dangerously-skip-permissions
+else
+    exec "$@"
+fi
+SCRIPT
+RUN chmod +x /home/$USERNAME/.local/bin/devenv-start
+
 # Switch to non-root user
 USER $USERNAME
 
@@ -101,9 +125,8 @@ ENV PATH="/home/developer/.local/bin:$PATH"
 ENV SHELL=/bin/zsh
 {% endif %}
 
-# Default shell
-{% if 'zsh' in profile.system_packages %}
-CMD ["/bin/zsh"]
-{% else %}
-CMD ["/bin/bash"]
-{% endif %}
+# Use startup script as entrypoint
+ENTRYPOINT ["devenv-start"]
+
+# Default is to start Claude (handled by entrypoint when no args)
+CMD []

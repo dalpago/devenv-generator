@@ -64,7 +64,9 @@ class TestDevEnvGenerator:
 
         # Default profile includes zsh
         assert "zsh" in content
-        assert 'CMD ["/bin/zsh"]' in content
+        # Should set zsh as default shell via env var and user shell
+        assert "SHELL=/bin/zsh" in content
+        assert "-s /bin/zsh" in content  # useradd shell option
 
     def test_render_docker_compose(self, generator: DevEnvGenerator) -> None:
         """Should render docker-compose.yml with correct content."""

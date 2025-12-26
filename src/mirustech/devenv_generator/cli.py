@@ -209,12 +209,14 @@ def _run_sandbox(
         console.print()
         if shell:
             console.print(f"[bold green]Starting shell in {sandbox_name}...[/bold green]")
+            console.print("[dim]Press Ctrl+D to exit[/dim]")
             cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev", "/bin/zsh"]
         else:
             console.print(f"[bold green]Starting Claude Code in {sandbox_name}...[/bold green]")
+            console.print("[dim]Installing dependencies and starting Claude...[/dim]")
+            # No args = entrypoint runs uv sync then starts Claude
             cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev"]
 
-        console.print("[dim]Press Ctrl+D to exit[/dim]")
         console.print()
 
         # Replace current process with docker compose
