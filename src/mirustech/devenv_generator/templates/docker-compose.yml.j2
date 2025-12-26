@@ -44,6 +44,8 @@ services:
       - ANTHROPIC_AUTH_TOKEN
       # Skip permission prompts and warning dialog (container is isolated)
       - IS_SANDBOX=1
+      # Default to Opus model (overrides any settings.json changes)
+      - ANTHROPIC_MODEL=opus
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}
