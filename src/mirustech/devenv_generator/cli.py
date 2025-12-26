@@ -171,16 +171,14 @@ def _run_sandbox(
         console.print("[red]Docker is not available. Please start Docker.[/red]")
         raise SystemExit(1)
 
-    # Build if needed
+    # Build if needed (show output for progress)
     console.print("[dim]Building container...[/dim]")
     build_result = subprocess.run(
         ["docker", "compose", "-p", sandbox_name, "build"],
         cwd=sandbox_dir,
-        capture_output=True,
-        text=True,
     )
     if build_result.returncode != 0:
-        console.print(f"[red]Build failed:[/red]\n{build_result.stderr}")
+        console.print("[red]Build failed[/red]")
         raise SystemExit(1)
 
     if detach:
