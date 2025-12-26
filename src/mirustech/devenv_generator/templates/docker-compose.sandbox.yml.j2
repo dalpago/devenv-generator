@@ -25,11 +25,9 @@ services:
       dockerfile: Dockerfile
     volumes:
 {% if use_host_claude_config %}
-      # Host Claude configuration (CLAUDE.md, MCP servers, settings)
-      - ~/.claude:/home/developer/.claude
-{% else %}
-      # Persistent Claude configuration (isolated from host)
-      - claude-config:/home/developer/.claude
+      # Host Claude config mounted read-only (for CLAUDE.md, MCP servers)
+      # Settings are NOT inherited - sandbox uses permissive defaults
+      - ~/.claude:/home/developer/.claude-host:ro
 {% endif %}
       # Git configuration from host
       - ~/.gitconfig:/home/developer/.gitconfig:ro
@@ -85,10 +83,4 @@ services:
     tty: true
 {% if has_cow_mounts %}
     privileged: true  # Required for overlay mounts
-{% endif %}
-
-{% if not use_host_claude_config %}
-volumes:
-  claude-config:
-    name: {{ sandbox_name }}-claude-config
 {% endif %}

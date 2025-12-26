@@ -96,6 +96,23 @@ RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
 #!/bin/sh
 set -e
 
+# Copy useful files from host Claude config (if mounted at .claude-host)
+# This preserves sandbox's permissive settings.json while getting CLAUDE.md etc.
+if [ -d /home/developer/.claude-host ]; then
+    # Copy global CLAUDE.md if it exists
+    if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
+        cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
+    fi
+    # Copy MCP server configurations if they exist
+    if [ -d /home/developer/.claude-host/mcp-servers ]; then
+        cp -r /home/developer/.claude-host/mcp-servers /home/developer/.claude/
+    fi
+    # Copy projects directory (per-project CLAUDE.md files) if it exists
+    if [ -d /home/developer/.claude-host/projects ]; then
+        cp -r /home/developer/.claude-host/projects /home/developer/.claude/
+    fi
+fi
+
 # Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)
 if [ -n "$GPG_AGENT_PORT" ]; then
     # Create a writable GPG home directory
@@ -132,6 +149,16 @@ fi
 for dir in /workspace/*; do
     if [ -d "$dir" ] && [ -f "$dir/pyproject.toml" ]; then
         cd "$dir"
+
+        # Check for stale .venv (symlinks to non-existent Python from host)
+        if [ -d "$dir/.venv" ]; then
+            VENV_PYTHON="$dir/.venv/bin/python"
+            if [ -L "$VENV_PYTHON" ] && [ ! -e "$VENV_PYTHON" ]; then
+                echo "Detected stale .venv (host Python not available), removing..."
+                rm -rf "$dir/.venv"
+            fi
+        fi
+
         echo "Installing dependencies in $dir..."
         uv sync --quiet 2>/dev/null || true
         break
