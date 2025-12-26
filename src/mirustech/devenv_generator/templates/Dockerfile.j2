@@ -83,7 +83,8 @@ RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.cla
     && chown $USERNAME:$USERNAME /home/$USERNAME/.claude.json
 
 # Pre-configure Claude Code settings with broad permissions (container is isolated)
-RUN echo '{"permissions":{"allow":["Bash(*)","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions"}' > /home/$USERNAME/.claude/settings.json \
+# Default model is set to Opus 4.5 for best code quality
+RUN echo '{"permissions":{"allow":["Bash(*)","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions","model":"claude-opus-4-5-20251101"}' > /home/$USERNAME/.claude/settings.json \
     && chown $USERNAME:$USERNAME /home/$USERNAME/.claude/settings.json
 
 # Copy uv tools to user's path
