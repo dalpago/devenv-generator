@@ -307,6 +307,35 @@ def _run_sandbox(
 
 
 @click.group(invoke_without_command=True)
+@click.version_option()
+@click.pass_context
+def main(ctx: click.Context) -> None:
+    """Run Claude Code on your projects in an isolated Docker container.
+
+    \b
+    Usage:
+        devenv                      # Current directory, starts Claude
+        devenv run ~/dev/myproject  # Specific project
+        devenv run --shell          # Drop to shell instead of Claude
+
+    \b
+    Container management:
+        devenv attach [name]        # Attach to running sandbox
+        devenv stop [name]          # Stop running sandbox
+        devenv status               # List sandboxes
+        devenv rm [name]            # Remove sandbox
+
+    \b
+    Profiles:
+        devenv profiles list        # List available profiles
+        devenv profiles show NAME   # Show profile details
+    """
+    # Default to 'run' subcommand if no subcommand given
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(run)
+
+
+@main.command("run")
 @click.argument("paths", nargs=-1, type=click.Path())
 @click.option(
     "--profile",
@@ -352,10 +381,7 @@ def _run_sandbox(
     default=None,
     help="Override Python version",
 )
-@click.version_option()
-@click.pass_context
-def main(
-    ctx: click.Context,
+def run(
     paths: tuple[str, ...],
     profile: str,
     output: str | None,
@@ -365,32 +391,21 @@ def main(
     shell: bool,
     python_version: str | None,
 ) -> None:
-    """Run Claude Code on your projects in an isolated Docker container.
+    """Run a sandbox with the specified project paths.
 
     \b
     Usage:
-        devenv                      # Current directory, starts Claude
-        devenv ~/dev/myproject      # Specific project
-        devenv --shell              # Drop to shell instead of Claude
-        devenv -d                   # Run in background
+        devenv run                  # Current directory
+        devenv run ~/dev/myproject  # Specific project
+        devenv run --shell          # Drop to shell instead of Claude
+        devenv run -d               # Run in background
 
     \b
     Mount modes:
         /path           Read-write (default)
         /path:ro        Read-only (safe exploration)
         /path:cow       Copy-on-write (changes discarded on exit)
-
-    \b
-    Container management:
-        devenv attach [name]        # Attach to running sandbox
-        devenv stop [name]          # Stop running sandbox
-        devenv status               # List sandboxes
-        devenv rm [name]            # Remove sandbox
     """
-    # If a subcommand was invoked, let it handle things
-    if ctx.invoked_subcommand is not None:
-        return
-
     # Default to current directory if no paths given
     if not paths:
         paths = (".",)
