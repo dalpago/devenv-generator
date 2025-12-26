@@ -61,4 +61,7 @@ warn_unused_configs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not integration'"
+markers = [
+    "integration: marks tests as integration tests (require Docker and ANTHROPIC_AUTH_TOKEN)",
+]

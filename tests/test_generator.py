@@ -95,13 +95,16 @@ class TestDevEnvGenerator:
             output_path = Path(tmpdir)
             generated = generator.generate(output_path)
 
-            assert len(generated) == 4
+            assert len(generated) == 7
 
             # Check files exist
             assert (output_path / ".devcontainer" / "Dockerfile").exists()
             assert (output_path / "docker-compose.yml").exists()
             assert (output_path / ".devcontainer" / "devcontainer.json").exists()
             assert (output_path / ".devcontainer" / "init-env.sh").exists()
+            assert (output_path / ".env.example").exists()
+            assert (output_path / ".sops.yaml").exists()
+            assert (output_path / ".gitignore").exists()
 
             # Check init script is executable
             init_script = output_path / ".devcontainer" / "init-env.sh"
