@@ -53,6 +53,8 @@ system_packages:
   - jq
   - tree
   - less
+  # GPG for commit signing
+  - gnupg
 
 github_releases:
   # Better git diffs

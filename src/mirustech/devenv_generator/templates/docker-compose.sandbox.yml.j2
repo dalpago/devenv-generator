@@ -28,6 +28,10 @@ services:
       # Persistent Claude configuration (isolated from host)
       - claude-config:/home/developer/.claude
 {% endif %}
+      # Git configuration from host
+      - ~/.gitconfig:/home/developer/.gitconfig:ro
+      # GPG keys for commit signing
+      - ~/.gnupg:/home/developer/.gnupg
 {% for mount in mounts %}
 {% if mount.mode == 'ro' %}
       # {{ mount.host_path.name }} (read-only)
@@ -47,8 +51,11 @@ services:
     environment:
       # Auth token passed from host
       - ANTHROPIC_AUTH_TOKEN
-      # Skip permission prompts (sandbox is isolated)
-      - CLAUDE_CODE_ACTION=bypassPermissions
+      # Skip permission prompts and warning dialog (sandbox is isolated)
+      - IS_SANDBOX=1
+      # GPG agent forwarding (auto-started by devenv command)
+      - GPG_AGENT_PORT=9876
+      - GNUPGHOME=/tmp/gnupg-runtime
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

@@ -1,6 +1,9 @@
 """CLI entry point for devenv-generator."""
 
+import atexit
 import os
+import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -160,6 +163,84 @@ def _ensure_docker_running() -> bool:
     return False
 
 
+# Global reference to GPG forwarder process for cleanup
+_gpg_forwarder_process: subprocess.Popen | None = None
+
+
+def _start_gpg_forwarder(port: int = 9876) -> subprocess.Popen | None:
+    """Start GPG agent socket forwarder on the host.
+
+    Returns the subprocess if started, None if GPG agent socket not found.
+    """
+    global _gpg_forwarder_process
+
+    # Check if socat is available
+    if not shutil.which("socat"):
+        console.print("[yellow]Warning: socat not installed, GPG forwarding disabled[/yellow]")
+        console.print("[dim]Install with: brew install socat[/dim]")
+        return None
+
+    # Find GPG agent socket
+    gpg_socket = None
+    possible_paths = [
+        Path("~/.gnupg/onlykey/S.gpg-agent").expanduser(),
+        Path("~/.gnupg/S.gpg-agent").expanduser(),
+    ]
+
+    for path in possible_paths:
+        if path.exists():
+            gpg_socket = path
+            break
+
+    if not gpg_socket:
+        # No GPG agent socket found, skip forwarding silently
+        return None
+
+    # Check if already listening on the port
+    try:
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if "socat" in result.stdout:
+            # Already running
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Start socat forwarder
+    try:
+        proc = subprocess.Popen(
+            [
+                "socat",
+                f"TCP-LISTEN:{port},fork,reuseaddr,bind=127.0.0.1",
+                f"UNIX-CONNECT:{gpg_socket}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _gpg_forwarder_process = proc
+
+        # Register cleanup
+        def cleanup_forwarder():
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+        atexit.register(cleanup_forwarder)
+
+        console.print(f"[dim]GPG agent forwarding: {gpg_socket} → port {port}[/dim]")
+        return proc
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to start GPG forwarder: {e}[/yellow]")
+        return None
+
+
 def _run_sandbox(
     sandbox_name: str,
     sandbox_dir: Path,
@@ -170,6 +251,9 @@ def _run_sandbox(
     if not _ensure_docker_running():
         console.print("[red]Docker is not available. Please start Docker.[/red]")
         raise SystemExit(1)
+
+    # Start GPG agent forwarder if available
+    _start_gpg_forwarder()
 
     # Build if needed (show output for progress)
     console.print("[dim]Building container...[/dim]")

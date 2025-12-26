@@ -39,8 +39,8 @@ services:
     environment:
       # Passed from host via: sops exec-env .env 'docker-compose run --rm dev'
       - ANTHROPIC_AUTH_TOKEN
-      # Skip permission prompts (container is isolated, safe to bypass)
-      - CLAUDE_CODE_ACTION=bypassPermissions
+      # Skip permission prompts and warning dialog (container is isolated)
+      - IS_SANDBOX=1
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

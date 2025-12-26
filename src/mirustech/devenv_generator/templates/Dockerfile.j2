@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 {% for pkg in profile.system_packages %}
     {{ pkg }} \
 {% endfor %}
+{% if 'gnupg' in profile.system_packages %}
+    socat \
+{% endif %}
     nodejs \
     npm \
     && rm -rf /var/lib/apt/lists/*
@@ -92,6 +95,38 @@ RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
 #!/bin/sh
 set -e
 
+# Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)
+if [ -n "$GPG_AGENT_PORT" ]; then
+    # Create a writable GPG home directory
+    GPG_HOME="/tmp/gnupg-runtime"
+    mkdir -p "$GPG_HOME"
+    chmod 700 "$GPG_HOME"
+
+    # Copy gpg.conf but remove agent-program line and add no-autostart
+    if [ -f /home/developer/.gnupg/gpg.conf ]; then
+        grep -v '^agent-program' /home/developer/.gnupg/gpg.conf > "$GPG_HOME/gpg.conf" 2>/dev/null || true
+    fi
+    echo "no-autostart" >> "$GPG_HOME/gpg.conf"
+
+    # Link the keyrings from the mounted directory
+    ln -sf /home/developer/.gnupg/pubring.kbx "$GPG_HOME/" 2>/dev/null || true
+    ln -sf /home/developer/.gnupg/trustdb.gpg "$GPG_HOME/" 2>/dev/null || true
+    ln -sf /home/developer/.gnupg/private-keys-v1.d "$GPG_HOME/" 2>/dev/null || true
+
+    # Remove any existing socket
+    rm -f "$GPG_HOME/S.gpg-agent" 2>/dev/null || true
+
+    # Start socat to bridge host GPG agent to local socket
+    socat UNIX-LISTEN:"$GPG_HOME/S.gpg-agent",fork,mode=600 \
+        TCP:host.docker.internal:"$GPG_AGENT_PORT" &
+
+    # Set GNUPGHOME so GPG uses our directory with the forwarded socket
+    export GNUPGHOME="$GPG_HOME"
+
+    echo "GPG agent forwarding enabled on port $GPG_AGENT_PORT"
+    sleep 0.5  # Give socat time to start
+fi
+
 # Find the first workspace directory with pyproject.toml
 for dir in /workspace/*; do
     if [ -d "$dir" ] && [ -f "$dir/pyproject.toml" ]; then
@@ -104,12 +139,27 @@ done
 
 # If no command provided, start Claude in YOLO mode
 if [ $# -eq 0 ]; then
-    exec claude --dangerously-skip-permissions
+    exec claude --permission-mode bypassPermissions
 else
     exec "$@"
 fi
 SCRIPT
 RUN chmod +x /home/$USERNAME/.local/bin/devenv-start
+
+{% if 'gnupg' in profile.system_packages %}
+# Create shell rc files with GPG forwarding support
+RUN cat > /home/$USERNAME/.gpg_forward << 'GPGRC'
+# Set up GPG agent forwarding if available
+if [ -n "$GPG_AGENT_PORT" ] && [ -d "/tmp/gnupg-runtime" ]; then
+    export GNUPGHOME="/tmp/gnupg-runtime"
+fi
+GPGRC
+
+# Source GPG config in both bash and zsh
+RUN echo '. ~/.gpg_forward' >> /home/$USERNAME/.bashrc \
+    && echo '. ~/.gpg_forward' >> /home/$USERNAME/.zshrc \
+    && chown $USERNAME:$USERNAME /home/$USERNAME/.gpg_forward /home/$USERNAME/.bashrc /home/$USERNAME/.zshrc
+{% endif %}
 
 # Switch to non-root user
 USER $USERNAME
@@ -123,6 +173,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/home/developer/.local/bin:$PATH"
 {% if 'zsh' in profile.system_packages %}
 ENV SHELL=/bin/zsh
+{% endif %}
+{% if 'gnupg' in profile.system_packages %}
+# Source GPG config for non-interactive bash (used by Claude)
+ENV BASH_ENV=/home/developer/.gpg_forward
 {% endif %}
 
 # Use startup script as entrypoint
