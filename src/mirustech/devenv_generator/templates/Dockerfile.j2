@@ -97,8 +97,12 @@ RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
 set -e
 
 # Copy useful files from host Claude config (if mounted at .claude-host)
-# This preserves sandbox's permissive settings.json while getting CLAUDE.md etc.
+# This preserves sandbox's permissive settings.json while getting auth, CLAUDE.md, etc.
 if [ -d /home/developer/.claude-host ]; then
+    # Copy credentials (auth token from 'claude login')
+    if [ -f /home/developer/.claude-host/.credentials.json ]; then
+        cp /home/developer/.claude-host/.credentials.json /home/developer/.claude/
+    fi
     # Copy global CLAUDE.md if it exists
     if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
         cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
