@@ -218,6 +218,7 @@ def _run_sandbox(
         console.print()
 
         # Replace current process with docker compose
+        os.chdir(sandbox_dir)
         os.execvp(cmd[0], cmd)
 
 
