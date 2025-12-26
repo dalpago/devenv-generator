@@ -7,7 +7,7 @@ import structlog
 import yaml
 from jinja2 import Environment, PackageLoader
 
-from mirustech.devenv_generator.models import MountSpec, ProfileConfig
+from mirustech.devenv_generator.models import ImageSpec, MountSpec, ProfileConfig
 
 logger = structlog.get_logger()
 
@@ -80,16 +80,23 @@ def get_bundled_profile(profile_name: str) -> ProfileConfig:
 class DevEnvGenerator:
     """Generate development environment files from profiles."""
 
-    def __init__(self, profile: ProfileConfig, project_name: str | None = None) -> None:
+    def __init__(
+        self,
+        profile: ProfileConfig,
+        project_name: str | None = None,
+        image_spec: ImageSpec | None = None,
+    ) -> None:
         """Initialize the generator.
 
         Args:
             profile: Profile configuration.
             project_name: Name for the project (used in volume names, etc.).
                          Defaults to 'project'.
+            image_spec: Optional image specification for registry support.
         """
         self.profile = profile
         self.project_name = project_name or "project"
+        self.image_spec = image_spec
         self.env = Environment(
             loader=PackageLoader("mirustech.devenv_generator", "templates"),
             trim_blocks=True,
@@ -113,7 +120,11 @@ class DevEnvGenerator:
             Rendered docker-compose.yml content.
         """
         template = self.env.get_template("docker-compose.yml.j2")
-        return template.render(profile=self.profile, project_name=self.project_name)
+        return template.render(
+            profile=self.profile,
+            project_name=self.project_name,
+            image_spec=self.image_spec,
+        )
 
     def render_devcontainer_json(self) -> str:
         """Render the devcontainer.json template.
@@ -310,6 +321,7 @@ class SandboxGenerator:
         mounts: list[MountSpec],
         sandbox_name: str,
         use_host_claude_config: bool = False,
+        image_spec: ImageSpec | None = None,
     ) -> None:
         """Initialize the sandbox generator.
 
@@ -318,11 +330,13 @@ class SandboxGenerator:
             mounts: List of project directories to mount.
             sandbox_name: Name for the sandbox.
             use_host_claude_config: Whether to mount host ~/.claude.
+            image_spec: Optional image specification for registry support.
         """
         self.profile = profile
         self.mounts = mounts
         self.sandbox_name = sandbox_name
         self.use_host_claude_config = use_host_claude_config
+        self.image_spec = image_spec
         self.env = Environment(
             loader=PackageLoader("mirustech.devenv_generator", "templates"),
             trim_blocks=True,
@@ -351,6 +365,7 @@ class SandboxGenerator:
             has_cow_mounts=has_cow_mounts,
             default_workdir=default_workdir,
             use_host_claude_config=self.use_host_claude_config,
+            image_spec=self.image_spec,
         )
 
     def render_dockerfile(self) -> str:

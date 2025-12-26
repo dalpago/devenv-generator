@@ -14,13 +14,22 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
+from mirustech.devenv_generator.application.use_cases.build_or_pull import (
+    BuildOrPullImageUseCase,
+)
 from mirustech.devenv_generator.generator import (
     DevEnvGenerator,
     SandboxGenerator,
     get_bundled_profile,
     load_profile,
 )
-from mirustech.devenv_generator.models import MountSpec, ProfileConfig
+from mirustech.devenv_generator.models import ImageSpec, MountSpec, ProfileConfig
+from mirustech.devenv_generator.settings import (
+    AuthMethod,
+    ensure_config_dir,
+    get_config_path,
+    get_settings,
+)
 
 # Configure structlog for CLI
 structlog.configure(
@@ -246,8 +255,17 @@ def _run_sandbox(
     sandbox_dir: Path,
     detach: bool = False,
     shell: bool = False,
+    skip_build: bool = False,
 ) -> None:
-    """Run a sandbox container."""
+    """Run a sandbox container.
+
+    Args:
+        sandbox_name: Name of the sandbox.
+        sandbox_dir: Directory containing docker-compose.yml.
+        detach: Run in background.
+        shell: Drop to shell instead of Claude.
+        skip_build: Skip the build step (used when image was pulled from registry).
+    """
     if not _ensure_docker_running():
         console.print("[red]Docker is not available. Please start Docker.[/red]")
         raise SystemExit(1)
@@ -255,15 +273,16 @@ def _run_sandbox(
     # Start GPG agent forwarder if available
     _start_gpg_forwarder()
 
-    # Build if needed (show output for progress)
-    console.print("[dim]Building container...[/dim]")
-    build_result = subprocess.run(
-        ["docker", "compose", "-p", sandbox_name, "build"],
-        cwd=sandbox_dir,
-    )
-    if build_result.returncode != 0:
-        console.print("[red]Build failed[/red]")
-        raise SystemExit(1)
+    # Build if needed (skip if already pulled from registry)
+    if not skip_build:
+        console.print("[dim]Building container...[/dim]")
+        build_result = subprocess.run(
+            ["docker", "compose", "-p", sandbox_name, "build"],
+            cwd=sandbox_dir,
+        )
+        if build_result.returncode != 0:
+            console.print("[red]Build failed[/red]")
+            raise SystemExit(1)
 
     if detach:
         # Start in background
@@ -381,6 +400,18 @@ def main(ctx: click.Context) -> None:
     default=None,
     help="Override Python version",
 )
+@click.option(
+    "--push-to-registry",
+    is_flag=True,
+    default=False,
+    help="Push image to registry after building",
+)
+@click.option(
+    "--no-registry",
+    is_flag=True,
+    default=False,
+    help="Disable registry even if configured",
+)
 def run(
     paths: tuple[str, ...],
     profile: str,
@@ -390,6 +421,8 @@ def run(
     detach: bool,
     shell: bool,
     python_version: str | None,
+    push_to_registry: bool,
+    no_registry: bool,
 ) -> None:
     """Run a sandbox with the specified project paths.
 
@@ -450,14 +483,54 @@ def run(
     if python_version:
         config.python.version = python_version
 
-    # Generate sandbox
-    generator = SandboxGenerator(
-        profile=config,
-        mounts=mount_specs,
-        sandbox_name=sandbox_name,
-        use_host_claude_config=not no_host_config,
-    )
-    generator.generate(output_path)
+    # Load settings to check for registry configuration
+    settings = get_settings()
+    image_spec: ImageSpec | None = None
+
+    # Use registry if enabled and not disabled via flag
+    if settings.registry.enabled and not no_registry:
+        use_case = BuildOrPullImageUseCase()
+        auto_push = push_to_registry or settings.registry.auto_push
+
+        # Generate sandbox first so we have the docker-compose.yml
+        generator = SandboxGenerator(
+            profile=config,
+            mounts=mount_specs,
+            sandbox_name=sandbox_name,
+            use_host_claude_config=not no_host_config,
+        )
+        generator.generate(output_path)
+
+        # Try to pull or build with registry support
+        result = use_case.execute(
+            project_path=mount_specs[0].host_path,
+            project_name=sandbox_name,
+            registry_config=settings.registry,
+            sandbox_dir=output_path,
+            sandbox_name=sandbox_name,
+            auto_push=auto_push,
+        )
+
+        if result.image_spec:
+            image_spec = result.image_spec
+            # Regenerate docker-compose with image_spec
+            generator = SandboxGenerator(
+                profile=config,
+                mounts=mount_specs,
+                sandbox_name=sandbox_name,
+                use_host_claude_config=not no_host_config,
+                image_spec=image_spec,
+            )
+            generator.generate(output_path)
+    else:
+        # Generate sandbox without registry support
+        generator = SandboxGenerator(
+            profile=config,
+            mounts=mount_specs,
+            sandbox_name=sandbox_name,
+            use_host_claude_config=not no_host_config,
+        )
+        generator.generate(output_path)
 
     console.print()
     console.print(f"[bold green]✓ Sandbox ready:[/bold green] {sandbox_name}")
@@ -467,8 +540,8 @@ def run(
         mode_str = {"rw": "", "ro": " (ro)", "cow": " (cow)"}[spec.mode]
         console.print(f"  {spec.host_path} → {spec.container_path}{mode_str}")
 
-    # Run the sandbox
-    _run_sandbox(sandbox_name, output_path, detach=detach, shell=shell)
+    # Run the sandbox (skip build step if we already pulled from registry)
+    _run_sandbox(sandbox_name, output_path, detach=detach, shell=shell, skip_build=image_spec is not None and settings.registry.enabled and not no_registry)
 
 
 @main.command("attach")
@@ -771,6 +844,137 @@ def create_profile(name: str, output: str | None) -> None:
 
     console.print(f"[green]Created profile:[/green] {output_path}")
     console.print("Edit this file to customize your development environment.")
+
+
+# Config command group
+@main.group()
+def config() -> None:
+    """Manage devenv configuration."""
+    pass
+
+
+@config.command("show")
+def config_show() -> None:
+    """Display current configuration."""
+    settings = get_settings()
+    config_path = get_config_path()
+
+    console.print("[bold]Registry Configuration:[/bold]")
+    console.print(f"  Enabled: {settings.registry.enabled}")
+    console.print(f"  URL: {settings.registry.url}")
+    console.print(f"  Auth Method: {settings.registry.auth_method.value}")
+    console.print(f"  Auto-push: {settings.registry.auto_push}")
+    console.print(f"  Timeout: {settings.registry.timeout}s")
+
+    if settings.registry.username:
+        console.print(f"  Username: {settings.registry.username}")
+
+    console.print()
+    if config_path.exists():
+        console.print(f"[dim]Config file: {config_path}[/dim]")
+    else:
+        console.print(f"[dim]Config file: {config_path} (not created yet)[/dim]")
+
+
+@config.command("set-registry")
+def config_set_registry() -> None:
+    """Configure container registry settings interactively."""
+    from rich.prompt import Confirm, Prompt
+
+    console.print()
+    console.print("[bold]Registry Setup Wizard[/bold]")
+    console.print("─" * 25)
+    console.print()
+
+    # Get registry URL
+    registry_url = Prompt.ask(
+        "Registry URL",
+        default="git.mirus-tech.com",
+    )
+
+    # Get auth method
+    console.print()
+    console.print("[bold]Authentication method:[/bold]")
+    console.print("  1. existing - Use existing docker login (recommended)")
+    console.print("  2. stored   - Store credentials in config file")
+    console.print("  3. prompt   - Prompt for credentials each time")
+    auth_choice = Prompt.ask(
+        "Choice",
+        choices=["1", "2", "3", "existing", "stored", "prompt"],
+        default="1",
+    )
+
+    auth_map = {"1": "existing", "2": "stored", "3": "prompt"}
+    auth_method = auth_map.get(auth_choice, auth_choice)
+
+    username = None
+    password = None
+    if auth_method == "stored":
+        console.print()
+        username = Prompt.ask("Username")
+        password = Prompt.ask("Password/Token", password=True)
+
+    # Auto-push setting
+    console.print()
+    auto_push = Confirm.ask("Auto-push after build?", default=False)
+
+    # Write config file
+    config_dir = ensure_config_dir()
+    config_path = config_dir / "config.env"
+
+    lines = [
+        "# devenv-generator configuration",
+        "# Generated by: devenv config set-registry",
+        "",
+        "DEVENV_REGISTRY__ENABLED=true",
+        f"DEVENV_REGISTRY__URL={registry_url}",
+        f"DEVENV_REGISTRY__AUTH_METHOD={auth_method}",
+        f"DEVENV_REGISTRY__AUTO_PUSH={str(auto_push).lower()}",
+    ]
+
+    if username:
+        lines.append(f"DEVENV_REGISTRY__USERNAME={username}")
+    if password:
+        lines.append(f"DEVENV_REGISTRY__PASSWORD={password}")
+        console.print()
+        console.print("[yellow]Warning: Password stored in plaintext.[/yellow]")
+        console.print("[dim]Consider encrypting with SOPS: sops encrypt --in-place ~/.config/devenv-generator/config.env[/dim]")
+
+    config_path.write_text("\n".join(lines) + "\n")
+
+    console.print()
+    console.print(f"[green]✓ Configuration saved to {config_path}[/green]")
+
+
+@config.command("edit")
+def config_edit() -> None:
+    """Open config file in editor."""
+    config_dir = ensure_config_dir()
+    config_path = config_dir / "config.env"
+
+    # Create default config if doesn't exist
+    if not config_path.exists():
+        default_content = """# devenv-generator configuration
+# See: devenv config set-registry
+
+# Enable registry support
+DEVENV_REGISTRY__ENABLED=false
+
+# Registry URL
+DEVENV_REGISTRY__URL=git.mirus-tech.com
+
+# Authentication method: existing, stored, prompt
+DEVENV_REGISTRY__AUTH_METHOD=existing
+
+# Auto-push after build
+DEVENV_REGISTRY__AUTO_PUSH=false
+"""
+        config_path.write_text(default_content)
+        console.print(f"[dim]Created default config at {config_path}[/dim]")
+
+    editor = os.environ.get("EDITOR", "vi")
+    console.print(f"[dim]Opening {config_path} with {editor}...[/dim]")
+    os.execvp(editor, [editor, str(config_path)])
 
 
 # Keep old commands as aliases for backwards compatibility
