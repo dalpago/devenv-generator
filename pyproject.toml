@@ -65,3 +65,8 @@ addopts = "-v --tb=short -m 'not integration'"
 markers = [
     "integration: marks tests as integration tests (require Docker and ANTHROPIC_AUTH_TOKEN)",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
