@@ -33,6 +33,15 @@ htmlcov/
 # Serena
 .serena/
 
+# Generated devenv output (from running generator on this project)
+.devcontainer/
+docker-compose.yml
+.env.example
+.sops.yaml
+
+# Claude local settings
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
