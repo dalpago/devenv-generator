@@ -129,7 +129,10 @@ if [ -d /home/developer/.claude-host ]; then
     fi
     # Copy MCP plugins directory (serena, context7, etc. configs)
     if [ -d /home/developer/.claude-host/plugins ]; then
+        echo "Copying MCP plugins from host..."
         cp -r /home/developer/.claude-host/plugins /home/developer/.claude/
+        # List copied MCP servers for debugging
+        find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  Found MCP config: {}" \;
     fi
     # Copy projects directory (per-project CLAUDE.md files) if it exists
     if [ -d /home/developer/.claude-host/projects ]; then
@@ -139,6 +142,7 @@ fi
 
 # If SERENA_MCP_URL is set, override Serena config to use HTTP mode
 if [ -n "$SERENA_MCP_URL" ]; then
+    echo "Configuring Serena for HTTP mode..."
     SERENA_DIR="/home/developer/.claude/plugins/marketplaces/claude-plugins-official/external_plugins/serena"
     mkdir -p "$SERENA_DIR"
     cat > "$SERENA_DIR/.mcp.json" << SERENACFG
@@ -149,7 +153,8 @@ if [ -n "$SERENA_MCP_URL" ]; then
   }
 }
 SERENACFG
-    echo "Serena configured for HTTP mode: $SERENA_MCP_URL"
+    echo "  Serena HTTP URL: $SERENA_MCP_URL"
+    echo "  Config written to: $SERENA_DIR/.mcp.json"
 fi
 
 # Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)

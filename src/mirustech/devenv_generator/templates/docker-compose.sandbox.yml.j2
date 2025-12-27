@@ -87,6 +87,11 @@ services:
 {% endif %}
     stdin_open: true
     tty: true
+{% if profile.docker_cli %}
+    # Grant access to docker socket (appears as root:root inside container on macOS)
+    group_add:
+      - "0"
+{% endif %}
 {% if has_cow_mounts %}
     privileged: true  # Required for overlay mounts
 {% endif %}
