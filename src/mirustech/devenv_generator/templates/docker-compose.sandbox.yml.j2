@@ -33,6 +33,10 @@ services:
       - ~/.gitconfig:/home/developer/.gitconfig:ro
       # GPG keys for commit signing
       - ~/.gnupg:/home/developer/.gnupg
+{% if profile.docker_cli %}
+      # Docker socket for Docker-in-Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+{% endif %}
 {% for mount in mounts %}
 {% if mount.mode == 'ro' %}
       # {{ mount.host_path.name }} (read-only)
@@ -59,6 +63,8 @@ services:
       # GPG agent forwarding (auto-started by devenv command)
       - GPG_AGENT_PORT=9876
       - GNUPGHOME=/tmp/gnupg-runtime
+      # Serena MCP server URL (if running on host in HTTP mode)
+      - SERENA_MCP_URL
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

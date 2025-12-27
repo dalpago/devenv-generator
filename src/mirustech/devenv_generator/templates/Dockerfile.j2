@@ -52,6 +52,20 @@ RUN npm install -g {% for pkg in profile.node_packages %}{{ pkg }}{% if not loop
 
 {% endif %}
 
+{% if profile.docker_cli %}
+# Install Docker CLI for Docker-in-Docker via socket mount
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+{% endif %}
+
 {% if 'delta' in profile.github_releases %}
 # Configure git to use delta for diffs
 RUN git config --global core.pager delta \
@@ -77,6 +91,12 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && mkdir -p /home/$USERNAME/.claude \
     && mkdir -p /home/$USERNAME/.config/sops/age \
     && chown -R $USERNAME:$USERNAME /home/$USERNAME
+
+{% if profile.docker_cli %}
+# Add user to docker group (GID 999 matches typical docker.sock group on host)
+RUN groupadd -g 999 docker || true \
+    && usermod -aG docker $USERNAME
+{% endif %}
 
 # Pre-configure Claude Code to skip onboarding prompts
 RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.claude.json \
@@ -107,14 +127,29 @@ if [ -d /home/developer/.claude-host ]; then
     if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
         cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
     fi
-    # Copy MCP server configurations if they exist
-    if [ -d /home/developer/.claude-host/mcp-servers ]; then
-        cp -r /home/developer/.claude-host/mcp-servers /home/developer/.claude/
+    # Copy MCP plugins directory (serena, context7, etc. configs)
+    if [ -d /home/developer/.claude-host/plugins ]; then
+        cp -r /home/developer/.claude-host/plugins /home/developer/.claude/
     fi
     # Copy projects directory (per-project CLAUDE.md files) if it exists
     if [ -d /home/developer/.claude-host/projects ]; then
         cp -r /home/developer/.claude-host/projects /home/developer/.claude/
     fi
+fi
+
+# If SERENA_MCP_URL is set, override Serena config to use HTTP mode
+if [ -n "$SERENA_MCP_URL" ]; then
+    SERENA_DIR="/home/developer/.claude/plugins/marketplaces/claude-plugins-official/external_plugins/serena"
+    mkdir -p "$SERENA_DIR"
+    cat > "$SERENA_DIR/.mcp.json" << SERENACFG
+{
+  "serena": {
+    "type": "streamable-http",
+    "url": "$SERENA_MCP_URL"
+  }
+}
+SERENACFG
+    echo "Serena configured for HTTP mode: $SERENA_MCP_URL"
 fi
 
 # Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)

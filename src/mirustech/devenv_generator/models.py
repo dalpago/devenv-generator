@@ -86,6 +86,10 @@ class ProfileConfig(BaseModel):
     )
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     mounts: MountsConfig = Field(default_factory=MountsConfig)
+    docker_cli: bool = Field(
+        default=True,
+        description="Install Docker CLI and mount docker.sock for Docker-in-Docker",
+    )
 
 
 class GeneratorConfig(BaseModel):

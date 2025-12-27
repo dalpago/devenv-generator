@@ -175,6 +175,73 @@ def _ensure_docker_running() -> bool:
 # Global reference to GPG forwarder process for cleanup
 _gpg_forwarder_process: subprocess.Popen | None = None
 
+# Global reference to Serena MCP server process for cleanup
+_serena_process: subprocess.Popen | None = None
+
+
+def _start_serena_server(port: int = 9121) -> subprocess.Popen | None:
+    """Start Serena MCP server in HTTP mode on host.
+
+    Returns the subprocess if started, None if failed.
+    """
+    global _serena_process
+
+    # Check if uvx is available
+    if not shutil.which("uvx"):
+        console.print("[yellow]Warning: uvx not installed, Serena server disabled[/yellow]")
+        console.print("[dim]Install with: curl -LsSf https://astral.sh/uv/install.sh | sh[/dim]")
+        return None
+
+    # Check if already running on the port
+    try:
+        result = subprocess.run(
+            ["lsof", "-i", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            console.print(f"[dim]Serena already running on port {port}[/dim]")
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Start Serena in HTTP mode
+    try:
+        console.print(f"[dim]Starting Serena MCP server on port {port}...[/dim]")
+        proc = subprocess.Popen(
+            [
+                "uvx",
+                "--from", "git+https://github.com/oraios/serena",
+                "serena", "start-mcp-server",
+                "--transport", "streamable-http",
+                "--port", str(port),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _serena_process = proc
+
+        # Register cleanup
+        def cleanup_serena():
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+        atexit.register(cleanup_serena)
+
+        # Wait for server to start
+        time.sleep(3)
+
+        console.print(f"[dim]Serena MCP server running on http://localhost:{port}[/dim]")
+        return proc
+    except Exception as e:
+        console.print(f"[yellow]Warning: Failed to start Serena server: {e}[/yellow]")
+        return None
+
 
 def _start_gpg_forwarder(port: int = 9876) -> subprocess.Popen | None:
     """Start GPG agent socket forwarder on the host.
@@ -256,6 +323,7 @@ def _run_sandbox(
     detach: bool = False,
     shell: bool = False,
     skip_build: bool = False,
+    serena_port: int | None = None,
 ) -> None:
     """Run a sandbox container.
 
@@ -265,7 +333,11 @@ def _run_sandbox(
         detach: Run in background.
         shell: Drop to shell instead of Claude.
         skip_build: Skip the build step (used when image was pulled from registry).
+        serena_port: If set, pass SERENA_MCP_URL to container for HTTP mode.
     """
+    # Set Serena MCP URL if port is specified (server running on host)
+    if serena_port:
+        os.environ["SERENA_MCP_URL"] = f"http://host.docker.internal:{serena_port}/mcp"
     if not _ensure_docker_running():
         console.print("[red]Docker is not available. Please start Docker.[/red]")
         raise SystemExit(1)
@@ -412,6 +484,17 @@ def main(ctx: click.Context) -> None:
     default=False,
     help="Disable registry even if configured",
 )
+@click.option(
+    "--start-serena",
+    is_flag=True,
+    default=False,
+    help="Start Serena MCP server on host in HTTP mode",
+)
+@click.option(
+    "--serena-port",
+    default=9121,
+    help="Port for Serena HTTP server (default: 9121)",
+)
 def run(
     paths: tuple[str, ...],
     profile: str,
@@ -423,6 +506,8 @@ def run(
     python_version: str | None,
     push_to_registry: bool,
     no_registry: bool,
+    start_serena: bool,
+    serena_port: int,
 ) -> None:
     """Run a sandbox with the specified project paths.
 
@@ -540,8 +625,19 @@ def run(
         mode_str = {"rw": "", "ro": " (ro)", "cow": " (cow)"}[spec.mode]
         console.print(f"  {spec.host_path} → {spec.container_path}{mode_str}")
 
+    # Start Serena MCP server on host if requested
+    if start_serena:
+        _start_serena_server(port=serena_port)
+
     # Run the sandbox (skip build step if we already pulled from registry)
-    _run_sandbox(sandbox_name, output_path, detach=detach, shell=shell, skip_build=image_spec is not None and settings.registry.enabled and not no_registry)
+    _run_sandbox(
+        sandbox_name,
+        output_path,
+        detach=detach,
+        shell=shell,
+        skip_build=image_spec is not None and settings.registry.enabled and not no_registry,
+        serena_port=serena_port if start_serena else None,
+    )
 
 
 @main.command("attach")
