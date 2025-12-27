@@ -169,11 +169,23 @@ fi
 # This is needed because MCP servers are stored in ~/.claude.json, not ~/.claude/
 if [ -f /home/developer/.claude.json-host ]; then
     echo "Merging MCP servers from host config..."
+    # Find first workspace project for Serena auto-activation
+    FIRST_PROJECT=""
+    for dir in /workspace/*; do
+        if [ -d "$dir" ]; then
+            FIRST_PROJECT="$dir"
+            break
+        fi
+    done
+    export FIRST_PROJECT
+
     python3 << 'PYMCP' 2>/dev/null || true
 import json
+import os
 
 host_config = '/home/developer/.claude.json-host'
 container_config = '/home/developer/.claude.json'
+first_project = os.environ.get('FIRST_PROJECT', '/workspace')
 
 # Read host config
 with open(host_config) as f:
@@ -188,8 +200,23 @@ except:
 
 # Copy MCP servers from host (user-scoped, global)
 if 'mcpServers' in host_data and host_data['mcpServers']:
-    container_data['mcpServers'] = host_data['mcpServers']
-    print(f"  Copied {len(host_data['mcpServers'])} MCP servers: {list(host_data['mcpServers'].keys())}")
+    servers = host_data['mcpServers'].copy()
+
+    # Fix Serena --project path: replace host path with container workspace path
+    if 'serena' in servers:
+        serena = servers['serena']
+        if 'args' in serena:
+            args = serena['args']
+            # Find and replace --project argument
+            for i, arg in enumerate(args):
+                if arg == '--project' and i + 1 < len(args):
+                    old_path = args[i + 1]
+                    args[i + 1] = first_project
+                    print(f"  Fixed Serena project: {old_path} -> {first_project}")
+                    break
+
+    container_data['mcpServers'] = servers
+    print(f"  Copied {len(servers)} MCP servers: {list(servers.keys())}")
 
 # Write merged config
 with open(container_config, 'w') as f:
