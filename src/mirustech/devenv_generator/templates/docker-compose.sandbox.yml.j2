@@ -28,6 +28,8 @@ services:
       # Host Claude config mounted read-only (for CLAUDE.md, MCP servers)
       # Settings are NOT inherited - sandbox uses permissive defaults
       - ~/.claude:/home/developer/.claude-host:ro
+      # Claude user config (contains MCP server definitions) - mounted as -host for merging
+      - ~/.claude.json:/home/developer/.claude.json-host:ro
 {% endif %}
       # Git configuration from host
       - ~/.gitconfig:/home/developer/.gitconfig:ro

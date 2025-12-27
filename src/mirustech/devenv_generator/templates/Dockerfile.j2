@@ -90,7 +90,9 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && mkdir -p /home/$USERNAME/.local/bin \
     && mkdir -p /home/$USERNAME/.claude \
     && mkdir -p /home/$USERNAME/.config/sops/age \
-    && chown -R $USERNAME:$USERNAME /home/$USERNAME
+    && chown -R $USERNAME:$USERNAME /home/$USERNAME \
+    && mkdir -p /Users \
+    && chown $USERNAME:$USERNAME /Users
 
 {% if profile.docker_cli %}
 # Add user to docker group (GID 999 matches typical docker.sock group on host)
@@ -116,6 +118,19 @@ RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
 #!/bin/sh
 set -e
 
+# Fix MCP plugin paths: Claude plugins store absolute host paths that don't exist in container
+# Create symlink so /Users/<host-user>/.claude -> /home/developer/.claude
+MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
+if [ -f "$MARKETPLACES_JSON" ]; then
+    # Extract host username from installLocation path (e.g., /Users/ziefle/.claude/...)
+    HOST_USER=$(grep -o '"/Users/[^/]*/' "$MARKETPLACES_JSON" 2>/dev/null | head -1 | sed 's|"/Users/||;s|/$||')
+    if [ -n "$HOST_USER" ] && [ "$HOST_USER" != "developer" ]; then
+        echo "Creating symlink for MCP plugin paths: /Users/$HOST_USER -> /home/developer"
+        mkdir -p /Users 2>/dev/null || true
+        ln -sfn /home/developer "/Users/$HOST_USER" 2>/dev/null || true
+    fi
+fi
+
 # Copy useful files from host Claude config (if mounted at .claude-host)
 # This preserves sandbox's permissive settings.json while getting auth, CLAUDE.md, etc.
 if [ -d /home/developer/.claude-host ]; then
@@ -131,13 +146,55 @@ if [ -d /home/developer/.claude-host ]; then
     if [ -d /home/developer/.claude-host/plugins ]; then
         echo "Copying MCP plugins from host..."
         cp -r /home/developer/.claude-host/plugins /home/developer/.claude/
+
+        # Fix absolute paths in known_marketplaces.json (host paths don't exist in container)
+        MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
+        if [ -f "$MARKETPLACES_JSON" ]; then
+            echo "Fixing marketplace paths for container..."
+            # Replace any /Users/<username>/.claude with /home/developer/.claude
+            sed -i 's|/Users/[^/]*/\.claude|/home/developer/.claude|g' "$MARKETPLACES_JSON"
+        fi
+
         # List copied MCP servers for debugging
-        find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  Found MCP config: {}" \;
+        echo "MCP servers found:"
+        find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  {}" \;
     fi
     # Copy projects directory (per-project CLAUDE.md files) if it exists
     if [ -d /home/developer/.claude-host/projects ]; then
         cp -r /home/developer/.claude-host/projects /home/developer/.claude/
     fi
+fi
+
+# Copy MCP servers from host's .claude.json to container's .claude.json
+# This is needed because MCP servers are stored in ~/.claude.json, not ~/.claude/
+if [ -f /home/developer/.claude.json-host ]; then
+    echo "Merging MCP servers from host config..."
+    python3 << 'PYMCP' 2>/dev/null || true
+import json
+
+host_config = '/home/developer/.claude.json-host'
+container_config = '/home/developer/.claude.json'
+
+# Read host config
+with open(host_config) as f:
+    host_data = json.load(f)
+
+# Read or create container config
+try:
+    with open(container_config) as f:
+        container_data = json.load(f)
+except:
+    container_data = {"hasCompletedOnboarding": True, "theme": "dark"}
+
+# Copy MCP servers from host (user-scoped, global)
+if 'mcpServers' in host_data and host_data['mcpServers']:
+    container_data['mcpServers'] = host_data['mcpServers']
+    print(f"  Copied {len(host_data['mcpServers'])} MCP servers: {list(host_data['mcpServers'].keys())}")
+
+# Write merged config
+with open(container_config, 'w') as f:
+    json.dump(container_data, f, indent=2)
+PYMCP
 fi
 
 # If SERENA_MCP_URL is set, override Serena config to use HTTP mode

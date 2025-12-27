@@ -1,6 +1,7 @@
 """CLI entry point for devenv-generator."""
 
 import atexit
+import hashlib
 import os
 import shutil
 import signal
@@ -325,6 +326,7 @@ def _run_sandbox(
     shell: bool = False,
     skip_build: bool = False,
     serena_port: int | None = None,
+    no_cache: bool = False,
 ) -> None:
     """Run a sandbox container.
 
@@ -335,6 +337,7 @@ def _run_sandbox(
         shell: Drop to shell instead of Claude.
         skip_build: Skip the build step (used when image was pulled from registry).
         serena_port: If set, pass SERENA_MCP_URL to container for HTTP mode.
+        no_cache: Force rebuild without using Docker cache.
     """
     # Set Serena MCP URL if port is specified (server running on host)
     if serena_port:
@@ -349,8 +352,12 @@ def _run_sandbox(
     # Build if needed (skip if already pulled from registry)
     if not skip_build:
         console.print("[dim]Building container...[/dim]")
+        build_cmd = ["docker", "compose", "-p", sandbox_name, "build"]
+        if no_cache:
+            build_cmd.append("--no-cache")
+            console.print("[dim]  (forcing rebuild without cache)[/dim]")
         build_result = subprocess.run(
-            ["docker", "compose", "-p", sandbox_name, "build"],
+            build_cmd,
             cwd=sandbox_dir,
         )
         if build_result.returncode != 0:
@@ -496,6 +503,12 @@ def main(ctx: click.Context) -> None:
     default=9121,
     help="Port for Serena HTTP server (default: 9121)",
 )
+@click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Force rebuild without Docker cache",
+)
 def run(
     paths: tuple[str, ...],
     profile: str,
@@ -509,6 +522,7 @@ def run(
     no_registry: bool,
     start_serena: bool,
     serena_port: int,
+    no_cache: bool,
 ) -> None:
     """Run a sandbox with the specified project paths.
 
@@ -630,14 +644,60 @@ def run(
     if start_serena:
         _start_serena_server(port=serena_port)
 
-    # Run the sandbox (skip build step if we already pulled from registry)
+    # Check if Dockerfile changed since last build (auto-invalidate cache)
+    # We compare the Dockerfile hash to a stored hash. If different, force rebuild.
+    # Also store hash in a global location to detect when ANY sandbox needs rebuild
+    # because Docker layer cache is shared across all sandboxes.
+    dockerfile_path = output_path / ".devcontainer" / "Dockerfile"
+    global_hash_path = Path.home() / ".cache" / "devenv-generator" / "dockerfile-template-hash"
+    auto_no_cache = False
+    skip_build = image_spec is not None and settings.registry.enabled and not no_registry
+
+    if dockerfile_path.exists():
+        current_hash = hashlib.md5(dockerfile_path.read_bytes()).hexdigest()
+
+        # Check if Docker image already exists
+        image_result = subprocess.run(
+            ["docker", "images", "-q", f"{sandbox_name}-dev:latest"],
+            capture_output=True,
+            text=True,
+        )
+        image_exists = bool(image_result.stdout.strip())
+
+        # Check global hash (template version) - if changed, ALL sandboxes need rebuild
+        global_hash_path.parent.mkdir(parents=True, exist_ok=True)
+        if global_hash_path.exists():
+            stored_global_hash = global_hash_path.read_text().strip()
+            if stored_global_hash != current_hash:
+                console.print("[yellow]Dockerfile template changed, forcing rebuild...[/yellow]")
+                auto_no_cache = True
+            elif image_exists and not no_cache:
+                # Image exists and Dockerfile unchanged - skip build entirely
+                console.print("[dim]Image up-to-date, skipping build[/dim]")
+                skip_build = True
+        else:
+            # First time seeing this template
+            if image_exists:
+                # Image exists but no hash - template was updated, force rebuild
+                console.print("[yellow]Dockerfile template updated, forcing rebuild...[/yellow]")
+                auto_no_cache = True
+            # else: No image exists yet, will build normally
+
+        # Store hash
+        global_hash_path.write_text(current_hash)
+    elif not skip_build:
+        # No dockerfile yet (shouldn't happen normally)
+        console.print("[dim]Building image for first time...[/dim]")
+
+    # Run the sandbox
     _run_sandbox(
         sandbox_name,
         output_path,
         detach=detach,
         shell=shell,
-        skip_build=image_spec is not None and settings.registry.enabled and not no_registry,
+        skip_build=skip_build,
         serena_port=serena_port if start_serena else None,
+        no_cache=no_cache or auto_no_cache,
     )
 
 
@@ -753,7 +813,7 @@ def start_sandbox(name: str | None, detach: bool, shell: bool) -> None:
         raise SystemExit(1)
 
     console.print(f"[bold green]Starting {name}...[/bold green]")
-    _run_sandbox(name, sandbox_dir, detach=detach, shell=shell, skip_build=False)
+    _run_sandbox(name, sandbox_dir, detach=detach, shell=shell, skip_build=False, no_cache=False)
 
 
 @main.command("cd")
