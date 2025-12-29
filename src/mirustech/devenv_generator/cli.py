@@ -22,6 +22,7 @@ from mirustech.devenv_generator.application.use_cases.build_or_pull import (
 from mirustech.devenv_generator.generator import (
     DevEnvGenerator,
     SandboxGenerator,
+    compute_build_hash,
     get_bundled_profile,
     load_profile,
 )
@@ -587,6 +588,48 @@ def run(
     settings = get_settings()
     image_spec: ImageSpec | None = None
 
+    # Check if build configuration changed BEFORE generating files
+    # The build hash includes: profile config + Dockerfile template + docker-compose template
+    build_hash_path = output_path / ".devcontainer" / ".build-hash"
+    current_build_hash = compute_build_hash(config)
+    auto_no_cache = False
+    skip_build = False
+    config_changed = False
+
+    # Check if Docker image already exists
+    image_result = subprocess.run(
+        ["docker", "images", "-q", f"{sandbox_name}-dev:latest"],
+        capture_output=True,
+        text=True,
+    )
+    image_exists = bool(image_result.stdout.strip())
+
+    # If image doesn't exist, we definitely need to build
+    if not image_exists:
+        console.print("[dim]No image found, will build[/dim]")
+        config_changed = True
+    # Compare with stored hash (before generating new files)
+    elif build_hash_path.exists():
+        stored_hash = build_hash_path.read_text().strip()
+        if stored_hash != current_build_hash:
+            console.print(
+                "[yellow]⚠ Build configuration changed - rebuild required[/yellow]"
+            )
+            console.print("[dim]Changes detected in profile or templates[/dim]")
+            config_changed = True
+            auto_no_cache = True
+        elif not no_cache:
+            # Image exists and config unchanged - can potentially skip build
+            console.print("[dim]Build configuration unchanged[/dim]")
+    else:
+        # No stored hash - first build or old sandbox
+        # Image exists but no hash - force rebuild to be safe
+        console.print(
+            "[yellow]No build hash found - forcing rebuild for safety[/yellow]"
+        )
+        auto_no_cache = True
+        config_changed = True
+
     # Use registry if enabled and not disabled via flag
     if settings.registry.enabled and not no_registry:
         use_case = BuildOrPullImageUseCase()
@@ -613,6 +656,7 @@ def run(
 
         if result.image_spec:
             image_spec = result.image_spec
+            skip_build = True  # Image pulled from registry
             # Regenerate docker-compose with image_spec
             generator = SandboxGenerator(
                 profile=config,
@@ -644,50 +688,10 @@ def run(
     if start_serena:
         _start_serena_server(port=serena_port)
 
-    # Check if Dockerfile changed since last build (auto-invalidate cache)
-    # We compare the Dockerfile hash to a stored hash. If different, force rebuild.
-    # Also store hash in a global location to detect when ANY sandbox needs rebuild
-    # because Docker layer cache is shared across all sandboxes.
-    dockerfile_path = output_path / ".devcontainer" / "Dockerfile"
-    global_hash_path = Path.home() / ".cache" / "devenv-generator" / "dockerfile-template-hash"
-    auto_no_cache = False
-    skip_build = image_spec is not None and settings.registry.enabled and not no_registry
-
-    if dockerfile_path.exists():
-        current_hash = hashlib.md5(dockerfile_path.read_bytes()).hexdigest()
-
-        # Check if Docker image already exists
-        image_result = subprocess.run(
-            ["docker", "images", "-q", f"{sandbox_name}-dev:latest"],
-            capture_output=True,
-            text=True,
-        )
-        image_exists = bool(image_result.stdout.strip())
-
-        # Check global hash (template version) - if changed, ALL sandboxes need rebuild
-        global_hash_path.parent.mkdir(parents=True, exist_ok=True)
-        if global_hash_path.exists():
-            stored_global_hash = global_hash_path.read_text().strip()
-            if stored_global_hash != current_hash:
-                console.print("[yellow]Dockerfile template changed, forcing rebuild...[/yellow]")
-                auto_no_cache = True
-            elif image_exists and not no_cache:
-                # Image exists and Dockerfile unchanged - skip build entirely
-                console.print("[dim]Image up-to-date, skipping build[/dim]")
-                skip_build = True
-        else:
-            # First time seeing this template
-            if image_exists:
-                # Image exists but no hash - template was updated, force rebuild
-                console.print("[yellow]Dockerfile template updated, forcing rebuild...[/yellow]")
-                auto_no_cache = True
-            # else: No image exists yet, will build normally
-
-        # Store hash
-        global_hash_path.write_text(current_hash)
-    elif not skip_build:
-        # No dockerfile yet (shouldn't happen normally)
-        console.print("[dim]Building image for first time...[/dim]")
+    # Determine if we can skip the build
+    if not config_changed and image_exists and not no_cache and not skip_build:
+        console.print("[dim]Image up-to-date, skipping build[/dim]")
+        skip_build = True
 
     # Run the sandbox
     _run_sandbox(
