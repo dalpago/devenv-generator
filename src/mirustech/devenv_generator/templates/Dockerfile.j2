@@ -89,6 +89,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s {% if 'zsh' in profile.system_packages %}/bin/zsh{% else %}/bin/bash{% endif %} \
     && mkdir -p /home/$USERNAME/.local/bin \
     && mkdir -p /home/$USERNAME/.claude \
+    && mkdir -p /home/$USERNAME/.happy \
     && mkdir -p /home/$USERNAME/.config/sops/age \
     && chown -R $USERNAME:$USERNAME /home/$USERNAME \
     && mkdir -p /Users \
@@ -163,6 +164,14 @@ if [ -d /home/developer/.claude-host ]; then
     if [ -d /home/developer/.claude-host/projects ]; then
         cp -r /home/developer/.claude-host/projects /home/developer/.claude/
     fi
+fi
+
+# Copy Happy Coder config from host (if mounted at .happy-host)
+if [ -d /home/developer/.happy-host ]; then
+    echo "Copying Happy Coder config from host..."
+    cp -r /home/developer/.happy-host/* /home/developer/.happy/ 2>/dev/null || true
+    # Ensure proper ownership for writable copy
+    chmod -R u+w /home/developer/.happy 2>/dev/null || true
 fi
 
 # Copy MCP servers from host's .claude.json to container's .claude.json

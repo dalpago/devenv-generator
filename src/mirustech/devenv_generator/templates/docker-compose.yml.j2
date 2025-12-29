@@ -40,8 +40,8 @@ services:
       - ~/.ssh:/home/developer/.ssh:ro
 {% endif %}
 {% if profile.mounts.happy_config %}
-      # Happy Coder mobile client config
-      - ~/.happy:/home/developer/.happy
+      # Happy Coder mobile client config (read-only, copied at runtime)
+      - ~/.happy:/home/developer/.happy-host:ro
 {% endif %}
     environment:
       # Claude Code OAuth token (get via: claude setup-token)

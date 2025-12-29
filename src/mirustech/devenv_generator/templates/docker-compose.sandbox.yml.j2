@@ -40,8 +40,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 {% endif %}
 {% if profile.mounts.happy_config %}
-      # Happy Coder mobile client config
-      - ~/.happy:/home/developer/.happy
+      # Happy Coder mobile client config (read-only, copied at runtime)
+      - ~/.happy:/home/developer/.happy-host:ro
 {% endif %}
 {% for mount in mounts %}
 {% if mount.mode == 'ro' %}
