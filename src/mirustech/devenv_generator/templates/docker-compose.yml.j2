@@ -39,13 +39,22 @@ services:
       # SSH keys from host
       - ~/.ssh:/home/developer/.ssh:ro
 {% endif %}
+{% if profile.mounts.happy_config %}
+      # Happy Coder mobile client config
+      - ~/.happy:/home/developer/.happy
+{% endif %}
     environment:
-      # Passed from host via: sops exec-env .env 'docker-compose run --rm dev'
+      # Claude Code OAuth token (get via: claude setup-token)
+      # This is the preferred auth method for containers on macOS
+      - CLAUDE_CODE_OAUTH_TOKEN
+      # Legacy: API key auth (still supported)
       - ANTHROPIC_AUTH_TOKEN
       # Skip permission prompts and warning dialog (container is isolated)
       - IS_SANDBOX=1
       # Default to Opus model (overrides any settings.json changes)
       - ANTHROPIC_MODEL=opus
+      # Happy Coder server URL (for self-hosted Happy instances)
+      - HAPPY_SERVER_URL
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

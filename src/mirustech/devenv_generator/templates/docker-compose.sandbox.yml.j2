@@ -39,6 +39,10 @@ services:
       # Docker socket for Docker-in-Docker
       - /var/run/docker.sock:/var/run/docker.sock
 {% endif %}
+{% if profile.mounts.happy_config %}
+      # Happy Coder mobile client config
+      - ~/.happy:/home/developer/.happy
+{% endif %}
 {% for mount in mounts %}
 {% if mount.mode == 'ro' %}
       # {{ mount.host_path.name }} (read-only)
@@ -56,7 +60,10 @@ services:
 {% endif %}
 {% endfor %}
     environment:
-      # Auth token passed from host
+      # Claude Code OAuth token (get via: claude setup-token)
+      # This is the preferred auth method for containers on macOS
+      - CLAUDE_CODE_OAUTH_TOKEN
+      # Legacy: API key auth (still supported)
       - ANTHROPIC_AUTH_TOKEN
       # Skip permission prompts and warning dialog (sandbox is isolated)
       - IS_SANDBOX=1
@@ -67,6 +74,8 @@ services:
       - GNUPGHOME=/tmp/gnupg-runtime
       # Serena MCP server URL (if running on host in HTTP mode)
       - SERENA_MCP_URL
+      # Happy Coder server URL (for self-hosted Happy instances)
+      - HAPPY_SERVER_URL
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

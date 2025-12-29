@@ -64,8 +64,10 @@ github_releases:
 
 node_packages:
   - "@anthropic-ai/claude-code"
+  - "happy-coder"
 
-environment: {}
+environment:
+  HAPPY_SERVER_URL: "https://happy.ziefle.org"
 
 network:
   mode: full
@@ -75,3 +77,4 @@ mounts:
   gitconfig: false
   ssh_keys: false
   claude_config: volume
+  happy_config: true

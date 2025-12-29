@@ -40,6 +40,9 @@ class MountsConfig(BaseModel):
         default="bind",
         description="How to persist Claude config: volume (Docker), bind (host), none",
     )
+    happy_config: bool = Field(
+        default=True, description="Mount host ~/.happy for Happy Coder mobile client"
+    )
 
 
 class ProfileConfig(BaseModel):
@@ -70,7 +73,7 @@ class ProfileConfig(BaseModel):
         description="System packages to install via apt",
     )
     node_packages: list[str] = Field(
-        default_factory=lambda: ["@anthropic-ai/claude-code"],
+        default_factory=lambda: ["@anthropic-ai/claude-code", "happy-coder"],
         description="Node.js packages to install globally via npm",
     )
     github_releases: dict[str, str] = Field(
