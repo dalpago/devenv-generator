@@ -21,6 +21,10 @@ services:
     build:
       context: .devcontainer
       dockerfile: Dockerfile
+{% if profile.docker_cli %}
+      args:
+        DOCKER_GID: {{ docker_gid }}
+{% endif %}
     volumes:
       # Mount workspace (changes reflect on host)
       - .:/workspace

@@ -85,6 +85,7 @@ RUN chsh -s $(which zsh)
 ARG USERNAME=developer
 ARG USER_UID=501
 ARG USER_GID=$USER_UID
+ARG DOCKER_GID=999
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s {% if 'zsh' in profile.system_packages %}/bin/zsh{% else %}/bin/bash{% endif %} \
     && mkdir -p /home/$USERNAME/.local/bin \
@@ -96,8 +97,9 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && chown $USERNAME:$USERNAME /Users
 
 {% if profile.docker_cli %}
-# Add user to docker group (GID 999 matches typical docker.sock group on host)
-RUN groupadd -g 999 docker || true \
+# Add user to docker group (GID matches docker.sock group on host)
+# Use build arg DOCKER_GID to match host's docker socket group
+RUN groupadd -g $DOCKER_GID docker || true \
     && usermod -aG docker $USERNAME
 {% endif %}
 

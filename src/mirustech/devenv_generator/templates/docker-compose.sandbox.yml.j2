@@ -23,6 +23,10 @@ services:
     build:
       context: .devcontainer
       dockerfile: Dockerfile
+{% if profile.docker_cli %}
+      args:
+        DOCKER_GID: {{ docker_gid }}
+{% endif %}
     volumes:
 {% if use_host_claude_config %}
       # Host Claude config mounted read-only (for CLAUDE.md, MCP servers)

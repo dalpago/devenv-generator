@@ -77,6 +77,30 @@ def get_bundled_profile(profile_name: str) -> ProfileConfig:
     raise FileNotFoundError(f"Profile not found: {profile_name}")
 
 
+def get_docker_socket_gid() -> int:
+    """Get the GID of the docker socket on the host.
+
+    Returns:
+        GID of /var/run/docker.sock, or 999 as fallback.
+    """
+    import os
+    import stat
+
+    docker_socket = Path("/var/run/docker.sock")
+    if docker_socket.exists():
+        try:
+            st = docker_socket.stat()
+            gid = st.st_gid
+            logger.debug("detected_docker_gid", gid=gid)
+            return gid
+        except (OSError, AttributeError):
+            pass
+
+    # Fallback to common default
+    logger.debug("docker_gid_fallback", gid=999)
+    return 999
+
+
 class DevEnvGenerator:
     """Generate development environment files from profiles."""
 
@@ -120,10 +144,12 @@ class DevEnvGenerator:
             Rendered docker-compose.yml content.
         """
         template = self.env.get_template("docker-compose.yml.j2")
+        docker_gid = get_docker_socket_gid()
         return template.render(
             profile=self.profile,
             project_name=self.project_name,
             image_spec=self.image_spec,
+            docker_gid=docker_gid,
         )
 
     def render_devcontainer_json(self) -> str:
@@ -357,6 +383,7 @@ class SandboxGenerator:
         template = self.env.get_template("docker-compose.sandbox.yml.j2")
         has_cow_mounts = any(m.mode == "cow" for m in self.mounts)
         default_workdir = self.mounts[0].host_path.name if self.mounts else ""
+        docker_gid = get_docker_socket_gid()
 
         return template.render(
             profile=self.profile,
@@ -366,6 +393,7 @@ class SandboxGenerator:
             default_workdir=default_workdir,
             use_host_claude_config=self.use_host_claude_config,
             image_spec=self.image_spec,
+            docker_gid=docker_gid,
         )
 
     def render_dockerfile(self) -> str:
