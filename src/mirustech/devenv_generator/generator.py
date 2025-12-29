@@ -105,12 +105,22 @@ def get_host_user_ids() -> tuple[int, int]:
     """Get the UID and GID of the host user running the command.
 
     Returns:
-        Tuple of (uid, gid). Defaults to (501, 501) for macOS compatibility.
+        Tuple of (uid, gid). Defaults to (1000, 1000) for Linux compatibility.
+        NEVER returns (0, 0) - containers should not run as root for security.
     """
     import os
 
     uid = os.getuid()
     gid = os.getgid()
+
+    # NEVER run container as root for security reasons
+    if uid == 0 or gid == 0:
+        logger.warning(
+            "running_as_root",
+            message="Running devenv as root detected. Container will use UID 1000 (non-root) for security.",
+            suggestion="If you need to access root-owned files, consider: chown -R 1000:1000 <path>",
+        )
+        return (1000, 1000)
 
     logger.debug("detected_host_user", uid=uid, gid=gid)
     return uid, gid
