@@ -351,6 +351,7 @@ USER $USER_UID:$USER_GID
 WORKDIR /workspace
 
 # Set environment variables
+ENV HOME=/home/developer
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/home/developer/.local/bin:$PATH"
