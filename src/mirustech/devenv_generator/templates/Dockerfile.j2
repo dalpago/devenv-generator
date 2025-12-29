@@ -87,35 +87,50 @@ ARG USERNAME=developer
 ARG USER_UID=501
 ARG USER_GID=501
 ARG DOCKER_GID=999
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s {% if 'zsh' in profile.system_packages %}/bin/zsh{% else %}/bin/bash{% endif %} \
-    && mkdir -p /home/$USERNAME/.local/bin \
+RUN set -e; \
+    # Create group if it doesn't exist
+    if ! getent group $USER_GID >/dev/null 2>&1; then \
+        groupadd --gid $USER_GID $USERNAME; \
+    fi; \
+    # Get the actual group name for this GID
+    GROUP_NAME=$(getent group $USER_GID | cut -d: -f1); \
+    # Create user if it doesn't exist
+    if ! getent passwd $USER_UID >/dev/null 2>&1; then \
+        useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s {% if 'zsh' in profile.system_packages %}/bin/zsh{% else %}/bin/bash{% endif %}; \
+    else \
+        # User exists, create home directory if needed
+        mkdir -p /home/$USERNAME; \
+    fi; \
+    # Setup directories
+    mkdir -p /home/$USERNAME/.local/bin \
     && mkdir -p /home/$USERNAME/.claude \
     && mkdir -p /home/$USERNAME/.happy \
     && mkdir -p /home/$USERNAME/.config/sops/age \
-    && chown -R $USERNAME:$USERNAME /home/$USERNAME \
+    && chown -R $USER_UID:$USER_GID /home/$USERNAME \
     && mkdir -p /Users \
-    && chown $USERNAME:$USERNAME /Users
+    && chown $USER_UID:$USER_GID /Users
 
 {% if profile.docker_cli %}
 # Add user to docker group (GID matches docker.sock group on host)
 # Use build arg DOCKER_GID to match host's docker socket group
-RUN groupadd -g $DOCKER_GID docker || true \
-    && usermod -aG docker $USERNAME
+RUN set -e; \
+    groupadd -g $DOCKER_GID docker || true; \
+    ACTUAL_USERNAME=$(getent passwd $USER_UID | cut -d: -f1); \
+    usermod -aG docker $ACTUAL_USERNAME
 {% endif %}
 
 # Pre-configure Claude Code to skip onboarding prompts
 RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.claude.json \
-    && chown $USERNAME:$USERNAME /home/$USERNAME/.claude.json
+    && chown $USER_UID:$USER_GID /home/$USERNAME/.claude.json
 
 # Pre-configure Claude Code settings with broad permissions (container is isolated)
 # Default model is set to Opus 4.5 for best code quality
 RUN echo '{"permissions":{"allow":["Bash","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions","model":"claude-opus-4-5-20251101"}' > /home/$USERNAME/.claude/settings.json \
-    && chown $USERNAME:$USERNAME /home/$USERNAME/.claude/settings.json
+    && chown $USER_UID:$USER_GID /home/$USERNAME/.claude/settings.json
 
 # Copy uv tools to user's path
 RUN cp -r /root/.local/bin/* /home/$USERNAME/.local/bin/ \
-    && chown -R $USERNAME:$USERNAME /home/$USERNAME/.local
+    && chown -R $USER_UID:$USER_GID /home/$USERNAME/.local
 
 # Create startup script that runs uv sync and then the command
 RUN cat > /home/$USERNAME/.local/bin/devenv-start << 'SCRIPT'
@@ -326,11 +341,11 @@ GPGRC
 # Source GPG config in both bash and zsh
 RUN echo '. ~/.gpg_forward' >> /home/$USERNAME/.bashrc \
     && echo '. ~/.gpg_forward' >> /home/$USERNAME/.zshrc \
-    && chown $USERNAME:$USERNAME /home/$USERNAME/.gpg_forward /home/$USERNAME/.bashrc /home/$USERNAME/.zshrc
+    && chown $USER_UID:$USER_GID /home/$USERNAME/.gpg_forward /home/$USERNAME/.bashrc /home/$USERNAME/.zshrc
 {% endif %}
 
-# Switch to non-root user
-USER $USERNAME
+# Switch to the user (using UID:GID to handle cases where user already exists)
+USER $USER_UID:$USER_GID
 
 # Create workspace directory
 WORKDIR /workspace
