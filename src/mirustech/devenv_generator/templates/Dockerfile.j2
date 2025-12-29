@@ -114,9 +114,18 @@ RUN set -e; \
 # Add user to docker group (GID matches docker.sock group on host)
 # Use build arg DOCKER_GID to match host's docker socket group
 RUN set -e; \
-    groupadd -g $DOCKER_GID docker || true; \
     ACTUAL_USERNAME=$(getent passwd $USER_UID | cut -d: -f1); \
-    usermod -aG docker $ACTUAL_USERNAME
+    # Check if a group with DOCKER_GID already exists
+    if getent group $DOCKER_GID > /dev/null 2>&1; then \
+        # Group with that GID exists, get its name
+        EXISTING_GROUP=$(getent group $DOCKER_GID | cut -d: -f1); \
+        echo "Using existing group $EXISTING_GROUP (GID $DOCKER_GID) for docker socket access"; \
+        usermod -aG $EXISTING_GROUP $ACTUAL_USERNAME; \
+    else \
+        # Create docker group with specified GID
+        groupadd -g $DOCKER_GID docker; \
+        usermod -aG docker $ACTUAL_USERNAME; \
+    fi
 {% endif %}
 
 # Pre-configure Claude Code to skip onboarding prompts
