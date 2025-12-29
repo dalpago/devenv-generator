@@ -1,5 +1,7 @@
 """Template rendering and file generation."""
 
+import hashlib
+import json
 from importlib.resources import files
 from pathlib import Path
 
@@ -114,6 +116,41 @@ def get_host_user_ids() -> tuple[int, int]:
 
     logger.debug("detected_host_user", uid=uid, gid=gid)
     return uid, gid
+
+
+def compute_build_hash(profile: ProfileConfig) -> str:
+    """Compute a hash representing the build configuration.
+    
+    This hash includes:
+    - Profile configuration (name, packages, system packages, etc.)
+    - Dockerfile template content
+    - docker-compose template content
+    
+    If any of these change, the hash will be different and a rebuild is needed.
+    
+    Args:
+        profile: Profile configuration to hash.
+        
+    Returns:
+        MD5 hash hex string.
+    """
+    hasher = hashlib.md5()
+    
+    # Hash the profile data (serialize to JSON for deterministic ordering)
+    profile_dict = profile.model_dump(mode="json")
+    profile_json = json.dumps(profile_dict, sort_keys=True)
+    hasher.update(profile_json.encode("utf-8"))
+    
+    # Hash the Dockerfile template content
+    templates_dir = files("mirustech.devenv_generator").joinpath("templates")
+    dockerfile_template = templates_dir.joinpath("Dockerfile.j2").read_text()
+    hasher.update(dockerfile_template.encode("utf-8"))
+    
+    # Hash the docker-compose template content
+    compose_template = templates_dir.joinpath("docker-compose.sandbox.yml.j2").read_text()
+    hasher.update(compose_template.encode("utf-8"))
+    
+    return hasher.hexdigest()
 
 
 class DevEnvGenerator:
@@ -527,5 +564,12 @@ creation_rules:
         sops_yaml_path.write_text(self.render_sops_yaml())
         generated_files.append(sops_yaml_path)
         self.logger.info("generated_file", path=str(sops_yaml_path))
+
+        # Build hash (for detecting when rebuild is needed)
+        build_hash = compute_build_hash(self.profile)
+        build_hash_path = devcontainer_dir / ".build-hash"
+        build_hash_path.write_text(build_hash)
+        generated_files.append(build_hash_path)
+        self.logger.info("generated_build_hash", hash=build_hash, path=str(build_hash_path))
 
         return generated_files
