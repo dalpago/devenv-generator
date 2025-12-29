@@ -21,8 +21,10 @@ services:
     build:
       context: .devcontainer
       dockerfile: Dockerfile
-{% if profile.docker_cli %}
       args:
+        USER_UID: {{ user_uid }}
+        USER_GID: {{ user_gid }}
+{% if profile.docker_cli %}
         DOCKER_GID: {{ docker_gid }}
 {% endif %}
     volumes:

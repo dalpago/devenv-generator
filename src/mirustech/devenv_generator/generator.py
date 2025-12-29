@@ -101,6 +101,21 @@ def get_docker_socket_gid() -> int:
     return 999
 
 
+def get_host_user_ids() -> tuple[int, int]:
+    """Get the UID and GID of the host user running the command.
+
+    Returns:
+        Tuple of (uid, gid). Defaults to (501, 501) for macOS compatibility.
+    """
+    import os
+
+    uid = os.getuid()
+    gid = os.getgid()
+
+    logger.debug("detected_host_user", uid=uid, gid=gid)
+    return uid, gid
+
+
 class DevEnvGenerator:
     """Generate development environment files from profiles."""
 
@@ -145,11 +160,14 @@ class DevEnvGenerator:
         """
         template = self.env.get_template("docker-compose.yml.j2")
         docker_gid = get_docker_socket_gid()
+        user_uid, user_gid = get_host_user_ids()
         return template.render(
             profile=self.profile,
             project_name=self.project_name,
             image_spec=self.image_spec,
             docker_gid=docker_gid,
+            user_uid=user_uid,
+            user_gid=user_gid,
         )
 
     def render_devcontainer_json(self) -> str:
@@ -384,6 +402,7 @@ class SandboxGenerator:
         has_cow_mounts = any(m.mode == "cow" for m in self.mounts)
         default_workdir = self.mounts[0].host_path.name if self.mounts else ""
         docker_gid = get_docker_socket_gid()
+        user_uid, user_gid = get_host_user_ids()
 
         return template.render(
             profile=self.profile,
@@ -394,6 +413,8 @@ class SandboxGenerator:
             use_host_claude_config=self.use_host_claude_config,
             image_spec=self.image_spec,
             docker_gid=docker_gid,
+            user_uid=user_uid,
+            user_gid=user_gid,
         )
 
     def render_dockerfile(self) -> str:

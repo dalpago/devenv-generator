@@ -81,10 +81,11 @@ RUN chsh -s $(which zsh)
 {% endif %}
 
 # Create non-root user (Claude Code refuses to run as root)
-# UID 501 matches default macOS user for proper file permissions on bind mounts
+# UID/GID are auto-detected from host user to match file permissions on bind mounts
+# Defaults: UID=501, GID=501 (macOS default)
 ARG USERNAME=developer
 ARG USER_UID=501
-ARG USER_GID=$USER_UID
+ARG USER_GID=501
 ARG DOCKER_GID=999
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME -s {% if 'zsh' in profile.system_packages %}/bin/zsh{% else %}/bin/bash{% endif %} \
