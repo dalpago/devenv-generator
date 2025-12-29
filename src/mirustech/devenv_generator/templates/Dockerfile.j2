@@ -187,9 +187,15 @@ fi
 # Copy Happy Coder config from host (if mounted at .happy-host)
 if [ -d /home/developer/.happy-host ]; then
     echo "Copying Happy Coder config from host..."
-    cp -r /home/developer/.happy-host/* /home/developer/.happy/ 2>/dev/null || true
-    # Ensure proper ownership for writable copy
-    chmod -R u+w /home/developer/.happy 2>/dev/null || true
+    # Use cp -a to preserve permissions and copy all files including hidden ones
+    if [ "$(ls -A /home/developer/.happy-host)" ]; then
+        cp -a /home/developer/.happy-host/. /home/developer/.happy/
+        # Ensure proper ownership for writable copy
+        chmod -R u+w /home/developer/.happy
+        echo "  Copied $(find /home/developer/.happy -type f | wc -l) files"
+    else
+        echo "  Warning: .happy-host is empty, nothing to copy"
+    fi
 fi
 
 # Copy MCP servers from host's .claude.json to container's .claude.json
