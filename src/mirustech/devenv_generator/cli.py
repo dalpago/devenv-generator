@@ -853,6 +853,42 @@ def cd_sandbox(name: str | None) -> None:
     os.execvp(shell, [shell])
 
 
+def _get_dir_size(path: Path) -> int:
+    """Get total size of a directory in bytes."""
+    total = 0
+    for entry in path.rglob("*"):
+        if entry.is_file():
+            try:
+                total += entry.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format bytes as human-readable size."""
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f}{unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f}TB"
+
+
+def _get_image_size(image_name: str) -> int | None:
+    """Get the size of a Docker image in bytes."""
+    result = subprocess.run(
+        ["docker", "image", "inspect", image_name, "--format", "{{.Size}}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        try:
+            return int(result.stdout.strip())
+        except ValueError:
+            return None
+    return None
+
+
 @main.command("status")
 def status() -> None:
     """List all sandboxes and their status."""
@@ -866,13 +902,36 @@ def status() -> None:
     table = Table(title="Sandboxes")
     table.add_column("Name", style="cyan")
     table.add_column("Status")
-    table.add_column("Path", style="dim")
+    table.add_column("Size", justify="right")
+    table.add_column("Image", justify="right")
+    table.add_column("Modified", style="dim")
 
     for name, path, is_running in sandboxes:
         status_str = "[green]running[/green]" if is_running else "[dim]stopped[/dim]"
-        table.add_row(name, status_str, str(path))
+
+        # Get directory size
+        dir_size = _get_dir_size(path)
+        size_str = _format_size(dir_size)
+
+        # Get image size
+        image_name = f"{name}-dev:latest"
+        image_size = _get_image_size(image_name)
+        image_str = _format_size(image_size) if image_size else "[dim]—[/dim]"
+
+        # Get last modified time
+        try:
+            mtime = path.stat().st_mtime
+            modified = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime))
+        except OSError:
+            modified = "—"
+
+        table.add_row(name, status_str, size_str, image_str, modified)
 
     console.print(table)
+
+    # Show total disk usage
+    total_sandbox_size = sum(_get_dir_size(path) for _, path, _ in sandboxes)
+    console.print(f"\n[dim]Total sandbox configs: {_format_size(total_sandbox_size)}[/dim]")
 
 
 @main.command("rm")
@@ -909,10 +968,299 @@ def remove_sandbox(name: str | None, force: bool) -> None:
         )
 
     # Remove the directory
-    import shutil
     shutil.rmtree(sandbox_dir)
 
     console.print(f"[bold green]✓ Removed:[/bold green] {name}")
+
+
+@main.command("clean")
+@click.option(
+    "--stopped", "-s", is_flag=True, help="Remove stopped sandboxes"
+)
+@click.option(
+    "--images", "-i", is_flag=True, help="Remove unused devenv images"
+)
+@click.option(
+    "--all", "-a", "all_", is_flag=True, help="Remove everything (stopped sandboxes + images)"
+)
+@click.option(
+    "--dry-run", "-n", is_flag=True, help="Show what would be removed without removing"
+)
+def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
+    """Clean up unused sandboxes and images.
+
+    By default, shows what can be cleaned. Use flags to specify what to remove.
+
+    Examples:
+
+        devenv clean              # Show what can be cleaned
+
+        devenv clean --stopped    # Remove stopped sandboxes
+
+        devenv clean --images     # Remove unused devenv images
+
+        devenv clean --all        # Remove everything
+    """
+    if all_:
+        stopped = True
+        images = True
+
+    # If no flags, just show status
+    show_only = not (stopped or images)
+
+    sandboxes = _list_sandboxes()
+    stopped_sandboxes = [(n, p) for n, p, running in sandboxes if not running]
+
+    # Get devenv images
+    result = subprocess.run(
+        ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.ID}}"],
+        capture_output=True,
+        text=True,
+    )
+    devenv_images: list[tuple[str, str, str]] = []
+    if result.returncode == 0:
+        for line in result.stdout.strip().split("\n"):
+            if line and "-dev:" in line:
+                parts = line.split("\t")
+                if len(parts) >= 3:
+                    devenv_images.append((parts[0], parts[1], parts[2]))
+
+    # Find unused images (no matching sandbox)
+    sandbox_names = {n for n, _, _ in sandboxes}
+    unused_images = [
+        (name, size, id_)
+        for name, size, id_ in devenv_images
+        if name.replace("-dev:latest", "") not in sandbox_names
+    ]
+
+    # Get dangling images
+    dangling_result = subprocess.run(
+        ["docker", "images", "-f", "dangling=true", "--format", "{{.ID}}\t{{.Size}}"],
+        capture_output=True,
+        text=True,
+    )
+    dangling_images: list[tuple[str, str]] = []
+    if dangling_result.returncode == 0:
+        for line in dangling_result.stdout.strip().split("\n"):
+            if line:
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    dangling_images.append((parts[0], parts[1]))
+
+    if show_only:
+        console.print("[bold]Available for cleanup:[/bold]\n")
+
+        if stopped_sandboxes:
+            console.print(f"[yellow]Stopped sandboxes:[/yellow] {len(stopped_sandboxes)}")
+            for name, path in stopped_sandboxes:
+                size = _format_size(_get_dir_size(path))
+                console.print(f"  • {name} ({size})")
+        else:
+            console.print("[dim]No stopped sandboxes[/dim]")
+
+        console.print()
+
+        if unused_images:
+            console.print(f"[yellow]Unused devenv images:[/yellow] {len(unused_images)}")
+            for name, size, _ in unused_images:
+                console.print(f"  • {name} ({size})")
+        else:
+            console.print("[dim]No unused devenv images[/dim]")
+
+        if dangling_images:
+            console.print(f"\n[yellow]Dangling images:[/yellow] {len(dangling_images)}")
+
+        console.print("\n[dim]Use --stopped, --images, or --all to clean up[/dim]")
+        return
+
+    removed_count = 0
+
+    # Remove stopped sandboxes
+    if stopped and stopped_sandboxes:
+        console.print("[bold]Removing stopped sandboxes...[/bold]")
+        for name, path in stopped_sandboxes:
+            if dry_run:
+                console.print(f"  [dim]Would remove:[/dim] {name}")
+            else:
+                shutil.rmtree(path)
+                console.print(f"  [green]✓[/green] Removed {name}")
+                removed_count += 1
+
+    # Remove unused images
+    if images:
+        if unused_images:
+            console.print("[bold]Removing unused devenv images...[/bold]")
+            for name, size, id_ in unused_images:
+                if dry_run:
+                    console.print(f"  [dim]Would remove:[/dim] {name} ({size})")
+                else:
+                    result = subprocess.run(
+                        ["docker", "rmi", name],
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result.returncode == 0:
+                        console.print(f"  [green]✓[/green] Removed {name} ({size})")
+                        removed_count += 1
+                    else:
+                        console.print(f"  [red]✗[/red] Failed to remove {name}")
+
+        if dangling_images:
+            console.print("[bold]Removing dangling images...[/bold]")
+            for id_, size in dangling_images:
+                if dry_run:
+                    console.print(f"  [dim]Would remove:[/dim] {id_[:12]} ({size})")
+                else:
+                    result = subprocess.run(
+                        ["docker", "rmi", id_],
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result.returncode == 0:
+                        console.print(f"  [green]✓[/green] Removed {id_[:12]} ({size})")
+                        removed_count += 1
+
+    if dry_run:
+        console.print("\n[dim]Dry run - nothing was removed[/dim]")
+    elif removed_count > 0:
+        console.print(f"\n[bold green]✓ Cleaned up {removed_count} items[/bold green]")
+    else:
+        console.print("\n[dim]Nothing to clean[/dim]")
+
+
+@main.command("completions")
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
+def completions(shell: str) -> None:
+    """Generate shell completion script.
+
+    Outputs a shell script that enables tab completion for devenv commands.
+
+    Examples:
+
+        # Bash (add to ~/.bashrc):
+        eval "$(devenv completions bash)"
+
+        # Zsh (add to ~/.zshrc):
+        eval "$(devenv completions zsh)"
+
+        # Fish (add to ~/.config/fish/config.fish):
+        devenv completions fish | source
+    """
+    import os
+    import re
+
+    # Get the completion script from click
+    env_var = f"_{main.name.upper()}_COMPLETE"
+
+    if shell == "bash":
+        script = f'''
+_devenv_completion() {{
+    local IFS=$'\\n'
+    COMPREPLY=( $( env COMP_WORDS="${{COMP_WORDS[*]}}" \\
+                   COMP_CWORD=$COMP_CWORD \\
+                   {env_var}=bash_complete $1 ) )
+    return 0
+}}
+
+_devenv_sandbox_names() {{
+    local sandboxes_dir="$HOME/.local/share/devenv-sandboxes"
+    if [ -d "$sandboxes_dir" ]; then
+        ls -1 "$sandboxes_dir" 2>/dev/null
+    fi
+}}
+
+complete -F _devenv_completion -o default devenv
+'''
+    elif shell == "zsh":
+        script = f'''
+#compdef devenv
+
+_devenv_sandbox_names() {{
+    local sandboxes_dir="$HOME/.local/share/devenv-sandboxes"
+    if [[ -d "$sandboxes_dir" ]]; then
+        local sandboxes=($(ls -1 "$sandboxes_dir" 2>/dev/null))
+        _describe 'sandbox' sandboxes
+    fi
+}}
+
+_devenv() {{
+    local state
+
+    _arguments -C \\
+        '1: :->command' \\
+        '*: :->args'
+
+    case $state in
+        command)
+            local commands=(
+                'run:Run a sandbox for the given project paths'
+                'attach:Attach to a running sandbox'
+                'stop:Stop a running sandbox'
+                'start:Start a stopped sandbox'
+                'rm:Remove a sandbox'
+                'status:List all sandboxes and their status'
+                'clean:Clean up unused sandboxes and images'
+                'cd:Change to sandbox directory'
+                'new:Create a new project with devcontainer'
+                'profiles:Manage profiles'
+                'config:Manage configuration'
+                'completions:Generate shell completion script'
+            )
+            _describe 'command' commands
+            ;;
+        args)
+            case $words[2] in
+                attach|stop|start|rm|cd)
+                    _devenv_sandbox_names
+                    ;;
+                run|new)
+                    _files -/
+                    ;;
+            esac
+            ;;
+    esac
+}}
+
+compdef _devenv devenv
+'''
+    elif shell == "fish":
+        script = '''
+function __fish_devenv_sandbox_names
+    set -l sandboxes_dir "$HOME/.local/share/devenv-sandboxes"
+    if test -d "$sandboxes_dir"
+        ls -1 "$sandboxes_dir" 2>/dev/null
+    end
+end
+
+# Disable file completion by default
+complete -c devenv -f
+
+# Commands
+complete -c devenv -n "__fish_use_subcommand" -a "run" -d "Run a sandbox for the given project paths"
+complete -c devenv -n "__fish_use_subcommand" -a "attach" -d "Attach to a running sandbox"
+complete -c devenv -n "__fish_use_subcommand" -a "stop" -d "Stop a running sandbox"
+complete -c devenv -n "__fish_use_subcommand" -a "start" -d "Start a stopped sandbox"
+complete -c devenv -n "__fish_use_subcommand" -a "rm" -d "Remove a sandbox"
+complete -c devenv -n "__fish_use_subcommand" -a "status" -d "List all sandboxes and their status"
+complete -c devenv -n "__fish_use_subcommand" -a "clean" -d "Clean up unused sandboxes and images"
+complete -c devenv -n "__fish_use_subcommand" -a "cd" -d "Change to sandbox directory"
+complete -c devenv -n "__fish_use_subcommand" -a "new" -d "Create a new project with devcontainer"
+complete -c devenv -n "__fish_use_subcommand" -a "profiles" -d "Manage profiles"
+complete -c devenv -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
+complete -c devenv -n "__fish_use_subcommand" -a "completions" -d "Generate shell completion script"
+
+# Sandbox name completion for relevant commands
+complete -c devenv -n "__fish_seen_subcommand_from attach stop start rm cd" -a "(__fish_devenv_sandbox_names)"
+
+# Directory completion for run and new
+complete -c devenv -n "__fish_seen_subcommand_from run new" -a "(__fish_complete_directories)"
+'''
+    else:
+        console.print(f"[red]Unsupported shell: {shell}[/red]")
+        raise SystemExit(1)
+
+    # Output the script
+    click.echo(script.strip())
 
 
 @main.command("new")
