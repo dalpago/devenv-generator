@@ -228,3 +228,48 @@ class TestNetworkRestriction:
 
         assert 'network_mode: "none"' not in content
         assert "NET_ADMIN" not in content
+
+
+class TestHealthCheck:
+    """Tests for container health check in generated files."""
+
+    def test_dockerfile_includes_healthcheck(self) -> None:
+        """Dockerfile should include HEALTHCHECK instruction."""
+        profile = ProfileConfig(name="test")
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "HEALTHCHECK" in content
+        assert "--interval=30s" in content
+        assert "--timeout=10s" in content
+        assert "pgrep" in content
+
+
+class TestSSHKeyMounting:
+    """Tests for SSH key mounting in generated files."""
+
+    def test_compose_includes_ssh_mount_when_enabled(self) -> None:
+        """docker-compose should mount ~/.ssh when ssh_keys is enabled."""
+        from mirustech.devenv_generator.models import MountsConfig
+
+        profile = ProfileConfig(
+            name="ssh-test",
+            mounts=MountsConfig(ssh_keys=True),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_docker_compose()
+
+        assert "~/.ssh:/home/developer/.ssh:ro" in content
+
+    def test_compose_no_ssh_mount_when_disabled(self) -> None:
+        """docker-compose should NOT mount ~/.ssh when ssh_keys is disabled."""
+        from mirustech.devenv_generator.models import MountsConfig
+
+        profile = ProfileConfig(
+            name="no-ssh-test",
+            mounts=MountsConfig(ssh_keys=False),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_docker_compose()
+
+        assert "~/.ssh" not in content
