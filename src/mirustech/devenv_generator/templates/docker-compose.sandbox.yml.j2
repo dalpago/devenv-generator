@@ -41,6 +41,10 @@ services:
       - ~/.gitconfig:/home/developer/.gitconfig:ro
       # GPG keys for commit signing
       - ~/.gnupg:/home/developer/.gnupg
+{% if profile.mounts.ssh_keys %}
+      # SSH keys from host (for git over SSH)
+      - ~/.ssh:/home/developer/.ssh:ro
+{% endif %}
 {% if profile.docker_cli %}
       # Docker socket for Docker-in-Docker
       - /var/run/docker.sock:/var/run/docker.sock
