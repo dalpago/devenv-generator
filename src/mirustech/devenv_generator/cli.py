@@ -1160,6 +1160,134 @@ def _check_docker_socket() -> tuple[bool, str]:
     return True, "Docker socket accessible"
 
 
+
+def _fix_docker_running() -> tuple[bool, str]:
+    """Try to start Docker if it's not running."""
+    import platform
+    
+    system = platform.system()
+    
+    if system == "Darwin":  # macOS
+        console.print("[dim]Attempting to start Docker Desktop...[/dim]")
+        result = subprocess.run(
+            ["open", "-a", "Docker"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            # Wait for Docker to start
+            console.print("[dim]Waiting for Docker to start (this may take a minute)...[/dim]")
+            for _ in range(30):
+                time.sleep(2)
+                check = subprocess.run(
+                    ["docker", "info"],
+                    capture_output=True,
+                    text=True,
+                )
+                if check.returncode == 0:
+                    return True, "Docker Desktop started successfully"
+            return False, "Docker Desktop launched but didn't start in time"
+        else:
+            return False, "Failed to launch Docker Desktop"
+    elif system == "Linux":
+        # Try systemd
+        console.print("[dim]Attempting to start Docker service...[/dim]")
+        result = subprocess.run(
+            ["sudo", "systemctl", "start", "docker"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            time.sleep(3)
+            return True, "Docker service started"
+        else:
+            return False, f"Failed to start Docker service: {result.stderr.strip()}"
+    else:
+        return False, f"Don't know how to start Docker on {system}"
+
+
+def _fix_claude_dir() -> tuple[bool, str]:
+    """Create ~/.claude directory if missing."""
+    claude_dir = Path.home() / ".claude"
+    try:
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        return True, f"Created {claude_dir}"
+    except Exception as e:
+        return False, f"Failed to create {claude_dir}: {e}"
+
+
+def _fix_happy_dir() -> tuple[bool, str]:
+    """Create ~/.happy directory if missing."""
+    happy_dir = Path.home() / ".happy"
+    try:
+        happy_dir.mkdir(parents=True, exist_ok=True)
+        return True, f"Created {happy_dir}"
+    except Exception as e:
+        return False, f"Failed to create {happy_dir}: {e}"
+
+
+def _fix_disk_space() -> tuple[bool, str]:
+    """Attempt to free up disk space by cleaning unused images."""
+    console.print("[dim]Running cleanup to free disk space...[/dim]")
+    
+    # Count items before cleanup
+    sandboxes = _list_sandboxes()
+    stopped_sandboxes = [n for n, _, running in sandboxes if not running]
+    
+    # Get unused images
+    result = subprocess.run(
+        ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+        capture_output=True,
+        text=True,
+    )
+    devenv_images = []
+    if result.returncode == 0:
+        sandbox_names = {n for n, _, _ in sandboxes}
+        for line in result.stdout.strip().split("\n"):
+            if "-dev:" in line:
+                name = line.replace("-dev:latest", "")
+                if name not in sandbox_names:
+                    devenv_images.append(line)
+    
+    cleaned_items = 0
+    
+    # Remove stopped sandboxes
+    for name, path, _ in sandboxes:
+        if not _is_sandbox_running(name):
+            try:
+                shutil.rmtree(path)
+                cleaned_items += 1
+            except Exception:
+                pass
+    
+    # Remove unused images
+    for image in devenv_images:
+        result = subprocess.run(
+            ["docker", "rmi", image],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            cleaned_items += 1
+    
+    # Prune dangling images
+    result = subprocess.run(
+        ["docker", "image", "prune", "-f"],
+        capture_output=True,
+        text=True,
+    )
+    
+    if cleaned_items > 0:
+        return True, f"Cleaned {cleaned_items} items (stopped sandboxes and unused images)"
+    else:
+        return True, "No items to clean (disk space still low)"
+
+
+def _fix_claude_auth() -> tuple[bool, str]:
+    """Guide user to set up Claude authentication."""
+    return False, "Please run: claude login"
+
+
 def _get_image_size(image_name: str) -> int | None:
     """Get the size of a Docker image in bytes."""
     result = subprocess.run(
@@ -1446,37 +1574,38 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
     # Track results
     critical_passed = True
     warnings = []
+    failed_checks = []
     
-    # Define checks with severity levels
+    # Define checks with severity levels and optional fix functions
     checks = [
         # Critical checks (must pass)
-        ("critical", "Docker installed", _check_docker_installed),
-        ("critical", "Docker running", _check_docker_running),
-        ("critical", "Docker socket", _check_docker_socket),
-        ("critical", "Docker Compose", _check_docker_compose),
-        ("critical", "Claude authentication", _check_claude_auth),
+        ("critical", "Docker installed", _check_docker_installed, None),
+        ("critical", "Docker running", _check_docker_running, _fix_docker_running),
+        ("critical", "Docker socket", _check_docker_socket, None),
+        ("critical", "Docker Compose", _check_docker_compose, None),
+        ("critical", "Claude authentication", _check_claude_auth, _fix_claude_auth),
         
         # Warning checks (should pass)
-        ("warning", "~/.claude directory", _check_claude_dir),
-        ("warning", "Disk space", _check_disk_space),
-        ("warning", "Default profile valid", _check_profile_valid),
+        ("warning", "~/.claude directory", _check_claude_dir, _fix_claude_dir),
+        ("warning", "Disk space", _check_disk_space, _fix_disk_space),
+        ("warning", "Default profile valid", _check_profile_valid, None),
         
         # Info checks (nice to have)
-        ("info", "npm installed", _check_npm_installed),
-        ("info", "Git installed", _check_git_installed),
-        ("info", "Happy Coder config", _check_happy_config),
-        ("info", "MCP servers", _check_mcp_servers),
-        ("info", "GPG port (9876)", _check_gpg_port),
-        ("info", "Serena port (9121)", _check_serena_port),
-        ("info", "Registry connectivity", _check_registry_connectivity),
+        ("info", "npm installed", _check_npm_installed, None),
+        ("info", "Git installed", _check_git_installed, None),
+        ("info", "Happy Coder config", _check_happy_config, _fix_happy_dir),
+        ("info", "MCP servers", _check_mcp_servers, None),
+        ("info", "GPG port (9876)", _check_gpg_port, None),
+        ("info", "Serena port (9121)", _check_serena_port, None),
+        ("info", "Registry connectivity", _check_registry_connectivity, None),
     ]
     
     # Add container check if requested
     if container:
-        checks.append(("warning", "Container health", _check_container_health))
+        checks.append(("warning", "Container health", _check_container_health, None))
     
     # Run checks
-    for severity, name, check_fn in checks:
+    for severity, name, check_fn, fix_fn in checks:
         try:
             passed, message = check_fn()
             
@@ -1500,12 +1629,55 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
                     icon = "[dim]⚠[/dim]"
                 console.print(f"{icon} {name}: {message}")
                 
+                # Track failed checks for potential fixes
+                if fix_fn is not None:
+                    failed_checks.append((severity, name, check_fn, fix_fn, message))
+                
         except Exception as e:
             console.print(f"[red]✗[/red] {name}: Error running check: {e}")
             if severity == "critical":
                 critical_passed = False
     
     console.print()
+    
+    # Attempt fixes if requested
+    if fix and failed_checks:
+        console.print("[bold]Attempting to fix issues...[/bold]\n")
+        
+        fixes_applied = 0
+        for severity, name, check_fn, fix_fn, original_message in failed_checks:
+            console.print(f"[dim]Fixing {name}...[/dim]")
+            try:
+                success, fix_message = fix_fn()
+                
+                if success:
+                    # Re-run the check to verify
+                    passed, verify_message = check_fn()
+                    if passed:
+                        console.print(f"[green]✓[/green] {name}: {fix_message}")
+                        fixes_applied += 1
+                        
+                        # Remove from warnings if it was there
+                        warnings = [(n, m) for n, m in warnings if n != name]
+                        
+                        # Update critical_passed if this was critical
+                        if severity == "critical":
+                            # Re-check all critical
+                            critical_passed = all(
+                                check_fn()[0] 
+                                for sev, _, check_fn, _ in checks 
+                                if sev == "critical"
+                            )
+                    else:
+                        console.print(f"[yellow]⚠[/yellow] {name}: {fix_message} (but check still fails)")
+                else:
+                    console.print(f"[red]✗[/red] {name}: {fix_message}")
+            except Exception as e:
+                console.print(f"[red]✗[/red] {name}: Error during fix: {e}")
+        
+        console.print()
+        if fixes_applied > 0:
+            console.print(f"[bold green]✓ Applied {fixes_applied} fixes[/bold green]\n")
     
     # Summary
     if critical_passed and not warnings:
@@ -1519,6 +1691,8 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
     else:
         console.print("[bold red]✗ Critical issues detected[/bold red]")
         console.print("Please fix the issues above before using devenv.")
+        if not fix:
+            console.print("\n[dim]Hint: Try running with --fix to automatically fix some issues[/dim]")
         raise SystemExit(1)
     
     # Check for stale images if verbose
