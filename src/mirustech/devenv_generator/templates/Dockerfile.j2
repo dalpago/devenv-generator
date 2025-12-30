@@ -194,6 +194,21 @@ if [ -d /home/developer/.claude-host ]; then
     if [ -d /home/developer/.claude-host/projects ]; then
         cp -r /home/developer/.claude-host/projects /home/developer/.claude/
     fi
+    # Copy agents directory (custom agents) if it exists
+    if [ -d /home/developer/.claude-host/agents ]; then
+        echo "Copying custom agents from host..."
+        cp -r /home/developer/.claude-host/agents /home/developer/.claude/
+    fi
+    # Copy skills directory (custom skills) if it exists
+    if [ -d /home/developer/.claude-host/skills ]; then
+        echo "Copying custom skills from host..."
+        cp -r /home/developer/.claude-host/skills /home/developer/.claude/
+    fi
+    # Copy output-styles directory (custom output styles) if it exists
+    if [ -d /home/developer/.claude-host/output-styles ]; then
+        echo "Copying custom output styles from host..."
+        cp -r /home/developer/.claude-host/output-styles /home/developer/.claude/
+    fi
 fi
 
 # Copy Happy Coder config from host (if mounted at .happy-host)
