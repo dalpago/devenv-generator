@@ -30,6 +30,32 @@ class NetworkConfig(BaseModel):
         description="Domains to allowlist when mode is 'restricted'",
     )
 
+    @property
+    def effective_allowed_domains(self) -> list[str]:
+        """Return allowed domains with sensible defaults for development.
+
+        If user specifies allowed_domains, use those. Otherwise, provide
+        a default set that enables typical development workflows.
+        """
+        if self.allowed_domains:
+            return self.allowed_domains
+        # Default allowlist for development
+        return [
+            # Claude API (essential)
+            "api.anthropic.com",
+            "claude.ai",
+            # Python packages
+            "pypi.org",
+            "files.pythonhosted.org",
+            # npm packages
+            "registry.npmjs.org",
+            # Git/GitHub
+            "github.com",
+            "api.github.com",
+            "githubusercontent.com",
+            "objects.githubusercontent.com",
+        ]
+
 
 class MountsConfig(BaseModel):
     """Mount configuration for the container."""
