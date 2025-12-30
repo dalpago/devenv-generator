@@ -88,12 +88,13 @@ class TestNetworkConfig:
 class TestMountsConfig:
     """Tests for MountsConfig model."""
 
-    def test_defaults_isolated(self) -> None:
-        """Default mounts should be isolated."""
+    def test_defaults(self) -> None:
+        """Default mounts should have expected values."""
         config = MountsConfig()
-        assert config.gitconfig is False
+        assert config.gitconfig is True
         assert config.ssh_keys is False
-        assert config.claude_config == "volume"
+        assert config.claude_config == "bind"
+        assert config.happy_config is True
 
 
 class TestProfileConfig:

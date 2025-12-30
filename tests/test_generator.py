@@ -74,7 +74,8 @@ class TestDevEnvGenerator:
 
         assert "services:" in content
         assert "dev:" in content
-        assert "test-project-claude-config" in content
+        # Default claude_config is 'bind', so should mount ~/.claude
+        assert "~/.claude:/home/developer/.claude" in content
 
     def test_render_devcontainer_json(self, generator: DevEnvGenerator) -> None:
         """Should render devcontainer.json with correct content."""
