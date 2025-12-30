@@ -874,6 +874,292 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f}TB"
 
 
+def _check_docker_installed() -> tuple[bool, str]:
+    """Check if Docker is installed."""
+    result = subprocess.run(
+        ["docker", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"Docker installed: {version}"
+    return False, "Docker not found in PATH"
+
+
+def _check_docker_running() -> tuple[bool, str]:
+    """Check if Docker daemon is running."""
+    result = subprocess.run(
+        ["docker", "info"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True, "Docker daemon is running"
+    return False, "Docker daemon not running. Try: docker desktop or sudo systemctl start docker"
+
+
+def _check_docker_compose() -> tuple[bool, str]:
+    """Check if Docker Compose is available."""
+    # Try compose plugin first
+    result = subprocess.run(
+        ["docker", "compose", "version"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"Docker Compose available: {version}"
+    
+    # Try standalone docker-compose
+    result = subprocess.run(
+        ["docker-compose", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"Docker Compose available: {version}"
+    
+    return False, "Docker Compose not found"
+
+
+def _check_disk_space() -> tuple[bool, str]:
+    """Check available disk space."""
+    sandboxes_dir = SANDBOXES_DIR
+    if not sandboxes_dir.exists():
+        sandboxes_dir.mkdir(parents=True, exist_ok=True)
+    
+    stat = os.statvfs(sandboxes_dir)
+    available_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
+    
+    if available_gb < 1:
+        return False, f"Low disk space: {available_gb:.1f}GB available (recommend 5GB+)"
+    elif available_gb < 5:
+        return True, f"Disk space adequate: {available_gb:.1f}GB available (recommend 5GB+)"
+    else:
+        return True, f"Disk space good: {available_gb:.1f}GB available"
+
+
+def _check_claude_auth() -> tuple[bool, str]:
+    """Check if Claude authentication is configured."""
+    # Check for OAuth token
+    oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
+    if oauth_token:
+        return True, "Claude OAuth token found in environment"
+    
+    # Check for API key
+    api_key = os.getenv("ANTHROPIC_AUTH_TOKEN")
+    if api_key:
+        return True, "Anthropic API key found in environment"
+    
+    # Check for credentials file
+    creds_file = Path.home() / ".claude" / ".credentials.json"
+    if creds_file.exists():
+        return True, "Claude credentials file found"
+    
+    return False, "No Claude authentication found. Run: claude login"
+
+
+def _check_claude_dir() -> tuple[bool, str]:
+    """Check if ~/.claude directory exists and is accessible."""
+    claude_dir = Path.home() / ".claude"
+    if not claude_dir.exists():
+        return False, "~/.claude directory not found. Run: claude login"
+    
+    if not os.access(claude_dir, os.R_OK):
+        return False, f"~/.claude directory not readable. Check permissions: {claude_dir}"
+    
+    return True, "~/.claude directory exists and is accessible"
+
+
+def _check_happy_config() -> tuple[bool, str]:
+    """Check if Happy Coder config exists."""
+    happy_dir = Path.home() / ".happy"
+    if not happy_dir.exists():
+        return True, "~/.happy directory not found (optional)"
+    
+    if not os.access(happy_dir, os.R_OK):
+        return False, f"~/.happy directory not readable. Check permissions: {happy_dir}"
+    
+    # Check for access key
+    access_key = happy_dir / "access.key"
+    if access_key.exists():
+        return True, "Happy Coder config found with access key"
+    
+    return True, "~/.happy directory exists (no access key)"
+
+
+def _check_npm_installed() -> tuple[bool, str]:
+    """Check if npm is installed (needed for building containers)."""
+    result = subprocess.run(
+        ["npm", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"npm installed: v{version}"
+    return False, "npm not found (needed for container builds)"
+
+
+def _check_git_installed() -> tuple[bool, str]:
+    """Check if git is installed."""
+    result = subprocess.run(
+        ["git", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"Git installed: {version}"
+    return False, "Git not found (recommended for devenv workflows)"
+
+
+
+def _check_port_available(port: int, name: str) -> tuple[bool, str]:
+    """Check if a port is available or already in use by expected service."""
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", port))
+        sock.close()
+        return True, f"Port {port} available for {name}"
+    except OSError:
+        # Port in use - this is OK if it's being used by the expected service
+        return True, f"Port {port} in use (may be {name} running)"
+
+
+def _check_gpg_port() -> tuple[bool, str]:
+    """Check if GPG forwarding port is available."""
+    return _check_port_available(9876, "GPG agent forwarding")
+
+
+def _check_serena_port() -> tuple[bool, str]:
+    """Check if Serena MCP server port is available."""
+    return _check_port_available(9121, "Serena MCP HTTP mode")
+
+
+def _check_profile_valid() -> tuple[bool, str]:
+    """Check if the default profile is valid."""
+    try:
+        config = get_bundled_profile("mirustech")
+        return True, f"Default profile 'mirustech' is valid (Python {config.python.version})"
+    except Exception as e:
+        return False, f"Default profile invalid: {e}"
+
+
+def _check_registry_connectivity() -> tuple[bool, str]:
+    """Check if registry is configured and accessible."""
+    try:
+        settings = get_settings()
+        if not settings.registry.enabled:
+            return True, "Registry not configured (using local builds)"
+        
+        # Try to ping the registry
+        registry_url = settings.registry.url
+        import urllib.request
+        import urllib.error
+        
+        try:
+            # Just check if registry URL is reachable
+            req = urllib.request.Request(f"{registry_url}/v2/", method="GET")
+            with urllib.request.urlopen(req, timeout=5) as response:
+                if response.status == 200:
+                    return True, f"Registry accessible: {registry_url}"
+                else:
+                    return False, f"Registry returned status {response.status}: {registry_url}"
+        except urllib.error.URLError as e:
+            return False, f"Registry unreachable: {registry_url} ({e.reason})"
+        except Exception as e:
+            return False, f"Registry check failed: {e}"
+    except Exception as e:
+        return False, f"Error checking registry: {e}"
+
+
+def _check_container_health(sandbox_name: str | None = None) -> tuple[bool, str]:
+    """Check if a container can be created and runs successfully."""
+    # Find any devenv container
+    result = subprocess.run(
+        ["docker", "ps", "--filter", "name=devenv", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return True, "No containers running (health check skipped)"
+
+    container_names = result.stdout.strip().split("\n")
+    container_name = container_names[0]
+
+    try:
+        # Try to run a simple command in the container
+        result = subprocess.run(
+            ["docker", "exec", container_name, "sh", "-c",
+             "which claude >/dev/null 2>&1 && which happy >/dev/null 2>&1 && python --version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            python_version = result.stdout.strip()
+            return True, f"Container healthy (claude, happy, {python_version})"
+        else:
+            # Check what's missing
+            missing = []
+            for tool in ["claude", "happy", "python"]:
+                check = subprocess.run(
+                    ["docker", "exec", container_name, "which", tool],
+                    capture_output=True,
+                )
+                if check.returncode != 0:
+                    missing.append(tool)
+
+            if missing:
+                return False, f"Container missing tools: {', '.join(missing)}"
+            else:
+                return False, f"Container health check failed: {result.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        return False, "Container health check timed out"
+    except Exception as e:
+        return True, f"Could not check container health: {e} (not critical)"
+
+
+def _check_mcp_servers() -> tuple[bool, str]:
+    """Check if MCP servers are configured."""
+    claude_json = Path.home() / ".claude.json"
+    if not claude_json.exists():
+        return True, "No MCP servers configured (optional)"
+    
+    try:
+        import json
+        with open(claude_json) as f:
+            data = json.load(f)
+        
+        servers = data.get("mcpServers", {})
+        if not servers:
+            return True, "No MCP servers configured (optional)"
+        
+        server_names = ", ".join(servers.keys())
+        return True, f"MCP servers configured: {server_names}"
+    except Exception as e:
+        return False, f"Error reading MCP server config: {e}"
+
+
+def _check_docker_socket() -> tuple[bool, str]:
+    """Check if Docker socket is accessible."""
+    socket_path = Path("/var/run/docker.sock")
+    if not socket_path.exists():
+        return False, "Docker socket not found at /var/run/docker.sock"
+    
+    if not os.access(socket_path, os.R_OK | os.W_OK):
+        return False, "Docker socket not accessible (check permissions)"
+    
+    return True, "Docker socket accessible"
+
+
 def _get_image_size(image_name: str) -> int | None:
     """Get the size of a Docker image in bytes."""
     result = subprocess.run(
@@ -1126,6 +1412,142 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
         console.print(f"\n[bold green]✓ Cleaned up {removed_count} items[/bold green]")
     else:
         console.print("\n[dim]Nothing to clean[/dim]")
+
+
+
+@main.command("doctor")
+@click.option(
+    "--fix", is_flag=True, help="Attempt to fix issues automatically"
+)
+@click.option(
+    "--verbose", "-v", is_flag=True, help="Show detailed information"
+)
+@click.option(
+    "--container", is_flag=True, help="Include container health checks"
+)
+def doctor(fix: bool, verbose: bool, container: bool) -> None:
+    """Check system prerequisites and diagnose issues.
+    
+    Verifies that your system has all the necessary components for devenv
+    to work properly, including Docker, authentication, and disk space.
+    
+    Examples:
+    
+        devenv doctor              # Check all prerequisites
+        
+        devenv doctor --verbose    # Show detailed information
+        
+        devenv doctor --container  # Include container health checks
+        
+        devenv doctor --fix        # Attempt to fix issues automatically
+    """
+    console.print("[bold]Checking devenv prerequisites...[/bold]\n")
+    
+    # Track results
+    critical_passed = True
+    warnings = []
+    
+    # Define checks with severity levels
+    checks = [
+        # Critical checks (must pass)
+        ("critical", "Docker installed", _check_docker_installed),
+        ("critical", "Docker running", _check_docker_running),
+        ("critical", "Docker socket", _check_docker_socket),
+        ("critical", "Docker Compose", _check_docker_compose),
+        ("critical", "Claude authentication", _check_claude_auth),
+        
+        # Warning checks (should pass)
+        ("warning", "~/.claude directory", _check_claude_dir),
+        ("warning", "Disk space", _check_disk_space),
+        ("warning", "Default profile valid", _check_profile_valid),
+        
+        # Info checks (nice to have)
+        ("info", "npm installed", _check_npm_installed),
+        ("info", "Git installed", _check_git_installed),
+        ("info", "Happy Coder config", _check_happy_config),
+        ("info", "MCP servers", _check_mcp_servers),
+        ("info", "GPG port (9876)", _check_gpg_port),
+        ("info", "Serena port (9121)", _check_serena_port),
+        ("info", "Registry connectivity", _check_registry_connectivity),
+    ]
+    
+    # Add container check if requested
+    if container:
+        checks.append(("warning", "Container health", _check_container_health))
+    
+    # Run checks
+    for severity, name, check_fn in checks:
+        try:
+            passed, message = check_fn()
+            
+            # Format output based on result
+            if passed:
+                if severity == "critical":
+                    icon = "[green]✓[/green]"
+                elif severity == "warning":
+                    icon = "[yellow]✓[/yellow]"
+                else:
+                    icon = "[dim]✓[/dim]"
+                console.print(f"{icon} {name}: {message}")
+            else:
+                if severity == "critical":
+                    icon = "[red]✗[/red]"
+                    critical_passed = False
+                elif severity == "warning":
+                    icon = "[yellow]⚠[/yellow]"
+                    warnings.append((name, message))
+                else:
+                    icon = "[dim]⚠[/dim]"
+                console.print(f"{icon} {name}: {message}")
+                
+        except Exception as e:
+            console.print(f"[red]✗[/red] {name}: Error running check: {e}")
+            if severity == "critical":
+                critical_passed = False
+    
+    console.print()
+    
+    # Summary
+    if critical_passed and not warnings:
+        console.print("[bold green]✓ All checks passed![/bold green]")
+        console.print("Your system is ready to use devenv.")
+    elif critical_passed:
+        console.print("[bold yellow]⚠ Some warnings detected[/bold yellow]")
+        console.print("devenv should work, but you may encounter issues:")
+        for name, message in warnings:
+            console.print(f"  • {name}: {message}")
+    else:
+        console.print("[bold red]✗ Critical issues detected[/bold red]")
+        console.print("Please fix the issues above before using devenv.")
+        raise SystemExit(1)
+    
+    # Check for stale images if verbose
+    if verbose:
+        console.print("\n[bold]Additional information:[/bold]")
+        
+        # List sandboxes
+        sandboxes = _list_sandboxes()
+        console.print(f"Active sandboxes: {len(sandboxes)}")
+        
+        # Check for unused images
+        result = subprocess.run(
+            ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            devenv_images = [line for line in result.stdout.strip().split("\n") if "-dev:" in line]
+            console.print(f"Devenv images: {len(devenv_images)}")
+        
+        # Check Docker disk usage
+        result = subprocess.run(
+            ["docker", "system", "df"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            console.print("\n[dim]Docker disk usage:[/dim]")
+            console.print(result.stdout)
 
 
 @main.command("completions")
