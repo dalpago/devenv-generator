@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 {% if 'gnupg' in profile.system_packages %}
     socat \
 {% endif %}
+{% if profile.network.mode == 'restricted' %}
+    iptables \
+{% endif %}
     nodejs \
     npm \
     && rm -rf /var/lib/apt/lists/*
@@ -359,6 +362,55 @@ RUN echo '. ~/.gpg_forward' >> /home/$USERNAME/.bashrc \
     && chown $USER_UID:$USER_GID /home/$USERNAME/.gpg_forward /home/$USERNAME/.bashrc /home/$USERNAME/.zshrc
 {% endif %}
 
+{% if profile.network.mode == 'restricted' %}
+# Create network restriction entrypoint (runs as root to configure iptables)
+RUN cat > /usr/local/bin/network-entrypoint << 'NETSCRIPT'
+#!/bin/sh
+set -e
+
+echo "Applying network restrictions..."
+
+# Default policy: drop outgoing traffic
+iptables -P OUTPUT DROP
+ip6tables -P OUTPUT DROP 2>/dev/null || true
+
+# Allow loopback (localhost)
+iptables -A OUTPUT -o lo -j ACCEPT
+ip6tables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+
+# Allow established/related connections (for responses)
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+
+# Allow DNS (needed to resolve allowed domains)
+iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+ip6tables -A OUTPUT -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+ip6tables -A OUTPUT -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+
+# Resolve and allow each domain
+ALLOWED_DOMAINS="{{ profile.network.effective_allowed_domains | join(' ') }}"
+for domain in $ALLOWED_DOMAINS; do
+    echo "  Allowing: $domain"
+    # Resolve IPv4 addresses
+    for ip in $(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u); do
+        iptables -A OUTPUT -d "$ip" -j ACCEPT 2>/dev/null || true
+    done
+    # Resolve IPv6 addresses
+    for ip in $(getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u); do
+        ip6tables -A OUTPUT -d "$ip" -j ACCEPT 2>/dev/null || true
+    done
+done
+
+echo "Network restrictions applied."
+echo "Allowed domains: $ALLOWED_DOMAINS"
+
+# Switch to non-root user and run devenv-start
+exec su - developer -c "devenv-start $*"
+NETSCRIPT
+RUN chmod +x /usr/local/bin/network-entrypoint
+{% endif %}
+
 # Switch to the user (using UID:GID to handle cases where user already exists)
 USER $USER_UID:$USER_GID
 
@@ -378,8 +430,14 @@ ENV SHELL=/bin/zsh
 ENV BASH_ENV=/home/developer/.gpg_forward
 {% endif %}
 
+{% if profile.network.mode == 'restricted' %}
+# For restricted network mode, run as root first to apply iptables, then drop to user
+USER root
+ENTRYPOINT ["network-entrypoint"]
+{% else %}
 # Use startup script as entrypoint
 ENTRYPOINT ["devenv-start"]
+{% endif %}
 
 # Default is to start Claude (handled by entrypoint when no args)
 CMD []
