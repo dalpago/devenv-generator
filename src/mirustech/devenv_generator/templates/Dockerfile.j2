@@ -430,6 +430,10 @@ ENV SHELL=/bin/zsh
 ENV BASH_ENV=/home/developer/.gpg_forward
 {% endif %}
 
+# Health check - verify the shell is responsive
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -x "claude" > /dev/null || pgrep -x "zsh" > /dev/null || pgrep -x "bash" > /dev/null || exit 1
+
 {% if profile.network.mode == 'restricted' %}
 # For restricted network mode, run as root first to apply iptables, then drop to user
 USER root
