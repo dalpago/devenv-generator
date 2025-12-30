@@ -54,6 +54,57 @@ devenv stop [name]
 
 # Remove a sandbox
 devenv rm [name]
+
+# Clean up unused sandboxes and images
+devenv clean --all
+```
+
+## Diagnostics & Troubleshooting
+
+Use `devenv doctor` to diagnose and fix common setup issues:
+
+```bash
+# Check system health
+devenv doctor
+
+# Check and auto-fix issues
+devenv doctor --fix
+
+# Include container health checks
+devenv doctor --container
+
+# Show detailed information
+devenv doctor --verbose
+```
+
+**What it checks:**
+
+- ✅ Docker installed and running
+- ✅ Docker Compose available
+- ✅ Claude authentication configured
+- ✅ Disk space (warns if < 5GB)
+- ✅ Required directories (`~/.claude`, `~/.happy`)
+- ✅ Default profile validity
+- ✅ Container health (with `--container` flag)
+- ✅ Port availability (GPG, Serena)
+- ✅ MCP servers configured
+
+**Auto-fix capabilities:**
+
+- Starts Docker if not running (macOS/Linux)
+- Creates missing directories (`~/.claude`, `~/.happy`)
+- Cleans up disk space (removes stopped sandboxes, unused images)
+- Guides Claude authentication setup
+
+**Example output:**
+
+```
+✓ Docker installed: Docker version 28.4.0
+✓ Docker running: Docker daemon is running
+✓ Claude authentication: OAuth token found
+✓ Disk space: 92.1GB available
+✓ All checks passed!
+Your system is ready to use devenv.
 ```
 
 ## Mount Modes
@@ -68,17 +119,21 @@ devenv rm [name]
 
 - **Python** (auto-detected from your project, or 3.12)
 - **Claude Code** with YOLO mode enabled
+- **Happy Coder** (mobile client support)
 - **uv** for fast dependency management
 - **Shell**: zsh with syntax highlighting
 - **Search**: ripgrep (`rg`), fd
 - **Git tools**: delta (better diffs), bat (syntax highlighting)
 - **Utilities**: jq, yq, tree, curl
+- **MCP Servers**: Auto-configured from host (context7, serena, etc.)
 
 ## How It Works
 
 1. **Auto-detects** Python version from `.python-version` or `pyproject.toml`
 2. **Mounts** your project at `/workspace/<project-name>`
-3. **Mounts** your `~/.claude` for OAuth authentication and settings
+3. **Copies** from host into container:
+   - `~/.claude` (OAuth, CLAUDE.md, MCP servers, agents, skills, output-styles)
+   - `~/.happy` (Happy Coder config and credentials)
 4. **Runs** `uv sync` to install project dependencies
 5. **Starts** Claude Code with `--dangerously-skip-permissions`
 
