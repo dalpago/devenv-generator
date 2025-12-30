@@ -67,6 +67,14 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
+{% if profile.network.mode == 'none' %}
+    # Completely disable networking
+    network_mode: "none"
+{% elif profile.network.mode == 'restricted' %}
+    # Grant NET_ADMIN for iptables-based network restrictions
+    cap_add:
+      - NET_ADMIN
+{% endif %}
 
 {% if profile.mounts.claude_config == 'volume' %}
 volumes:
