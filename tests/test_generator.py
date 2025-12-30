@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from mirustech.devenv_generator.generator import DevEnvGenerator, load_profile
-from mirustech.devenv_generator.models import ProfileConfig, PythonConfig
+from mirustech.devenv_generator.models import NetworkConfig, ProfileConfig, PythonConfig
 
 
 class TestLoadProfile:
@@ -122,3 +122,108 @@ class TestDevEnvGenerator:
         content = generator.render_dockerfile()
 
         assert "FROM python:3.13-slim" in content
+
+
+class TestNetworkRestriction:
+    """Tests for network restriction in generated files."""
+
+    def test_dockerfile_includes_iptables_for_restricted_mode(self) -> None:
+        """Dockerfile should install iptables for restricted network mode."""
+        profile = ProfileConfig(
+            name="restricted-test",
+            network=NetworkConfig(mode="restricted"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "iptables" in content
+        assert "network-entrypoint" in content
+        assert "iptables -P OUTPUT DROP" in content
+
+    def test_dockerfile_no_iptables_for_full_mode(self) -> None:
+        """Dockerfile should NOT install iptables for full network mode."""
+        profile = ProfileConfig(
+            name="full-test",
+            network=NetworkConfig(mode="full"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        # iptables should not be in system packages for full mode
+        assert "network-entrypoint" not in content
+
+    def test_dockerfile_no_iptables_for_none_mode(self) -> None:
+        """Dockerfile should NOT install iptables for none mode (Docker handles it)."""
+        profile = ProfileConfig(
+            name="none-test",
+            network=NetworkConfig(mode="none"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "network-entrypoint" not in content
+
+    def test_dockerfile_includes_allowed_domains(self) -> None:
+        """Dockerfile should include the allowed domains in the entrypoint script."""
+        profile = ProfileConfig(
+            name="restricted-test",
+            network=NetworkConfig(mode="restricted"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        # Should include default allowed domains
+        assert "api.anthropic.com" in content
+        assert "pypi.org" in content
+        assert "github.com" in content
+
+    def test_dockerfile_includes_custom_domains(self) -> None:
+        """Dockerfile should include custom allowed domains."""
+        profile = ProfileConfig(
+            name="restricted-test",
+            network=NetworkConfig(
+                mode="restricted",
+                allowed_domains=["custom.example.com"],
+            ),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "custom.example.com" in content
+        # Should NOT include defaults when custom domains specified
+        assert "api.anthropic.com" not in content
+
+    def test_compose_includes_network_mode_none(self) -> None:
+        """docker-compose should use network_mode: none for none mode."""
+        profile = ProfileConfig(
+            name="none-test",
+            network=NetworkConfig(mode="none"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_docker_compose()
+
+        assert 'network_mode: "none"' in content
+
+    def test_compose_includes_cap_net_admin_for_restricted(self) -> None:
+        """docker-compose should add NET_ADMIN capability for restricted mode."""
+        profile = ProfileConfig(
+            name="restricted-test",
+            network=NetworkConfig(mode="restricted"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_docker_compose()
+
+        assert "cap_add:" in content
+        assert "NET_ADMIN" in content
+
+    def test_compose_no_network_config_for_full_mode(self) -> None:
+        """docker-compose should have no special network config for full mode."""
+        profile = ProfileConfig(
+            name="full-test",
+            network=NetworkConfig(mode="full"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_docker_compose()
+
+        assert 'network_mode: "none"' not in content
+        assert "NET_ADMIN" not in content
