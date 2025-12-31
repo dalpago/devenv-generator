@@ -128,6 +128,87 @@ Your system is ready to use devenv.
 - **SSH**: SSH client with agent forwarding support (`ssh-add -l` works)
 - **MCP Servers**: Auto-configured from host (context7, serena, etc.)
 
+## Architecture
+
+### Module Organization
+
+The CLI is organized by **feature domain** (not technical layer), mirroring user mental models:
+
+```
+cli.py (~345 lines - orchestrator)
+  ├── Imports command groups and registers them
+  ├── main() Click group with entry point
+  └── Remaining commands: help, completions, new, generate, sandbox
+
+commands/
+  ├── profiles.py (7 commands: profiles group)
+  ├── config.py (3 commands: config group)
+  ├── lifecycle.py (5 commands: run, attach, stop, start, cd)
+  ├── management.py (3 commands: status, rm, clean)
+  └── diagnostics.py (doctor command + DiagnosticRegistry with 17 checks, 5 fixes)
+
+utils/
+  ├── subprocess.py (run_command wrapper for subprocess.run)
+  └── process_manager.py (ProcessManager for background processes)
+```
+
+### Data Flow
+
+**Subprocess execution:**
+```
+Command → run_command(["docker", ...])
+         → Add defaults (capture_output=True, text=True, timeout=10)
+         → subprocess.run()
+         → CompletedProcess
+         → Command handler parses output
+```
+
+**Process management (GPG agent, Serena):**
+```
+devenv run --start-serena
+  → lifecycle.py:run()
+  → ProcessManager.start("serena", ["uvx", "serena", ...])
+  → subprocess.Popen() stored in _processes dict
+  → atexit.register(cleanup_all)
+  → On exit: terminate → wait(5s) → kill if needed
+```
+
+**Diagnostics:**
+```
+devenv doctor
+  → diagnostics.py:doctor()
+  → DiagnosticRegistry.run_all_checks()
+  → Executes all @diagnostic.check decorated functions
+  → Display results table
+  → If --fix: DiagnosticRegistry.run_all_fixes()
+```
+
+### Design Decisions
+
+**Why feature-based organization?** Commands are grouped by user intent ("I want to manage profiles") rather than technical layer ("all Click groups together"). This aligns with existing `@profiles` and `@config` group boundaries and matches user mental models.
+
+**Why subprocess wrapper?** The original cli.py had 33 identical `subprocess.run(capture_output=True, text=True, timeout=10)` calls. The wrapper provides single point for logging, error handling, and timeout defaults. Maintainability benefit outweighs the microscopic overhead (~1μs per call).
+
+**Why ProcessManager class?** Replaces global `_gpg_forwarder_process` and `_serena_process` variables. Encapsulates state in testable class matching adapter pattern (DockerRegistryClient, SubprocessGitClient). Enables test isolation and mocking.
+
+**Why diagnostic registry with decorators?** 17 check functions + 5 fix functions all return `tuple[bool, str]`. Registry with `@diagnostic.check('name')` decorator provides auto-discovery without manual registration. Mirrors pytest's `@pytest.fixture` pattern (familiar to developers).
+
+### Invariants
+
+- **Entry point:** `cli.py` MUST contain callable `main()` function (pyproject.toml entry point: `devenv = cli:main`)
+- **Command signatures:** Parameter names, types, defaults preserved (breaking changes affect user scripts)
+- **Diagnostic signatures:** All check/fix functions MUST return `tuple[bool, str]` (doctor command depends on this)
+- **Test imports:** When code moves, test imports MUST update to match
+
+### Tradeoffs
+
+| Decision | Cost | Benefit | Choice Rationale |
+|----------|------|---------|------------------|
+| Incremental refactoring | More commits, longer calendar time | Lower risk, easier rollback, independently testable | Risk reduction > calendar time |
+| Decorator registry | Less explicit (must find decorators) | Cleaner syntax, auto-discovery | Code clarity > discoverability (pytest uses same pattern) |
+| Subprocess wrapper | Extra function call (~1μs) | Eliminates 33 duplications, single point for logging | Maintainability >> microscopic performance cost |
+| ProcessManager class | More code than globals | Testable in isolation, matches adapter pattern | Testability > simplicity |
+
 ## How It Works
 
 1. **Auto-detects** Python version from `.python-version` or `pyproject.toml`
