@@ -131,6 +131,25 @@ RUN set -e; \
     fi
 {% endif %}
 
+{% if 'zsh' in profile.system_packages %}
+# Install oh-my-zsh for the user
+RUN set -e; \
+    cd /home/$USERNAME && \
+    git clone --depth=1 https://github.com/ohmyzsh/ohmyzsh.git .oh-my-zsh && \
+    cp .oh-my-zsh/templates/zshrc.zsh-template .zshrc && \
+    chown -R $USER_UID:$USER_GID .oh-my-zsh .zshrc
+{% endif %}
+
+{% if 'tmux' in profile.system_packages %}
+# Install oh-my-tmux for the user
+RUN set -e; \
+    cd /home/$USERNAME && \
+    git clone --depth=1 https://github.com/gpakosz/.tmux.git && \
+    ln -s -f .tmux/.tmux.conf .tmux.conf && \
+    cp .tmux/.tmux.conf.local .tmux.conf.local && \
+    chown -R $USER_UID:$USER_GID .tmux .tmux.conf .tmux.conf.local
+{% endif %}
+
 # Pre-configure Claude Code to skip onboarding prompts
 RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.claude.json \
     && chown $USER_UID:$USER_GID /home/$USERNAME/.claude.json

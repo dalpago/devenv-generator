@@ -100,7 +100,7 @@ class ProfileConfig(BaseModel):
     python: PythonConfig = Field(default_factory=PythonConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     uvx_tools: list[str] = Field(
-        default_factory=lambda: ["pre-commit", "ruff", "deptry", "mypy"],
+        default_factory=lambda: ["pre-commit", "ruff", "deptry", "mypy", "httpie"],
         description="Python tools to install globally via uvx",
     )
     system_packages: list[str] = Field(
@@ -117,6 +117,16 @@ class ProfileConfig(BaseModel):
             "jq",
             "tree",
             "less",
+            "htop",
+            "tmux",
+            "bat",
+            "git-extras",
+            "parallel",
+            "yq",
+            "eza",
+            "fzf",
+            "age",
+            "sqlite3",
         ],
         description="System packages to install via apt",
     )
@@ -127,7 +137,6 @@ class ProfileConfig(BaseModel):
     github_releases: dict[str, str] = Field(
         default_factory=lambda: {
             "delta": "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_amd64.deb",
-            "bat": "https://github.com/sharkdp/bat/releases/download/v0.24.0/bat_0.24.0_amd64.deb",
         },
         description="Tools to install from GitHub releases (name -> URL)",
     )
