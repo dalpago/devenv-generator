@@ -6,12 +6,8 @@ from tempfile import TemporaryDirectory
 import pytest
 from click.testing import CliRunner
 
-from mirustech.devenv_generator.cli import (
-    _format_size,
-    _get_dir_size,
-    completions,
-    main,
-)
+from mirustech.devenv_generator.cli import main
+from mirustech.devenv_generator.commands.management import _format_size, _get_dir_size
 
 
 class TestHelperFunctions:
