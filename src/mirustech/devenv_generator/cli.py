@@ -9,12 +9,30 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import rich_click as click
 import structlog
 import yaml
 from rich.console import Console
 from rich.table import Table
+
+
+class DefaultToRunGroup(click.RichGroup):
+    """Custom Click group that forwards unknown commands to 'run' subcommand.
+
+    This allows 'devenv ~/path' to work as a shortcut for 'devenv run ~/path'.
+    """
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        """Resolve command, falling back to 'run' for unknown commands."""
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError:
+            # Unknown command - treat all args as paths for 'run'
+            return "run", self.commands.get("run"), args
 
 from mirustech.devenv_generator.application.use_cases.build_or_pull import (
     BuildOrPullImageUseCase,
@@ -416,11 +434,10 @@ def _run_sandbox(
         os.execvp(cmd[0], cmd)
 
 
-@click.group(invoke_without_command=True, context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False})
+@click.group(cls=DefaultToRunGroup, invoke_without_command=True)
 @click.version_option()
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def main(ctx: click.Context, args: tuple[str, ...]) -> None:
+def main(ctx: click.Context) -> None:
     """Run Claude Code on your projects in an isolated Docker container.
 
     \b
@@ -441,12 +458,10 @@ def main(ctx: click.Context, args: tuple[str, ...]) -> None:
         devenv profiles list        # List available profiles
         devenv profiles show NAME   # Show profile details
     """
-    # Default to 'run' subcommand if no subcommand given
+    # Default to 'run' subcommand if no subcommand given (e.g., just 'devenv')
     if ctx.invoked_subcommand is None:
-        # Create a new context for the run command with the collected args
-        run_ctx = run.make_context("run", list(args), parent=ctx)
-        with run_ctx:
-            run.invoke(run_ctx)
+        # No arguments at all - invoke run with current directory
+        ctx.invoke(run)
 
 
 @main.command("help")
