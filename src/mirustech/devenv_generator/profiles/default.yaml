@@ -45,6 +45,7 @@ system_packages:
   - vim
   # Shell
   - zsh
+  - tmux
   # Build tools
   - make
   - build-essential
