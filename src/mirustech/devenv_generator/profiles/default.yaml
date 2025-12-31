@@ -1,8 +1,8 @@
-# Mirustech Standard Python Development Environment
-# Based on ~/.claude/CLAUDE.md guidelines
+# Default Python Development Environment
+# Optimized for Claude Code with YOLO mode
 
-name: mirustech
-description: "Standard Mirustech Python development environment with Claude Code YOLO mode"
+name: default
+description: "Default Python development environment with Claude Code"
 
 python:
   version: "3.12"
@@ -36,6 +36,8 @@ uvx_tools:
 system_packages:
   # Version control
   - git
+  # SSH client
+  - openssh-client
   # Download tools
   - curl
   - wget
@@ -69,12 +71,18 @@ node_packages:
 environment:
   HAPPY_SERVER_URL: "https://happy.ziefle.org"
 
+mcp:
+  enable_serena: true
+  serena_port: 9121
+  serena_browser: false
+  enable_context7: true
+
 network:
   mode: full
   allowed_domains: []
 
 mounts:
   gitconfig: false
-  ssh_keys: false
+  ssh_keys: true
   claude_config: volume
   happy_config: true

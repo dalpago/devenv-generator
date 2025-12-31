@@ -140,6 +140,7 @@ RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.cla
 RUN echo '{"permissions":{"allow":["Bash","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions","model":"claude-opus-4-5-20251101"}' > /home/$USERNAME/.claude/settings.json \
     && chown $USER_UID:$USER_GID /home/$USERNAME/.claude/settings.json
 
+
 # Copy uv tools to user's path
 RUN cp -r /root/.local/bin/* /home/$USERNAME/.local/bin/ \
     && chown -R $USER_UID:$USER_GID /home/$USERNAME/.local
@@ -161,6 +162,64 @@ if [ -f "$MARKETPLACES_JSON" ]; then
         ln -sfn /home/developer "/Users/$HOST_USER" 2>/dev/null || true
     fi
 fi
+
+{% if profile.mounts.ssh_keys %}
+# Copy SSH keys and config from read-only mount to writable directory
+if [ -d /home/developer/.ssh-host ]; then
+    echo "Setting up SSH from host..."
+    # Create writable .ssh directory and sockets subdirectory
+    mkdir -p /home/developer/.ssh/sockets
+    chmod 700 /home/developer/.ssh
+    chmod 700 /home/developer/.ssh/sockets
+
+    # Copy all SSH keys and known_hosts from host
+    if [ -n "$(ls -A /home/developer/.ssh-host 2>/dev/null)" ]; then
+        # Copy all files except config and sockets (we'll handle those specially)
+        for file in /home/developer/.ssh-host/*; do
+            filename=$(basename "$file")
+            if [ "$filename" != "config" ] && [ "$filename" != "sockets" ]; then
+                cp -r "$file" /home/developer/.ssh/
+            fi
+        done
+
+        # Set proper permissions for keys
+        chmod 600 /home/developer/.ssh/id_* 2>/dev/null || true
+        chmod 644 /home/developer/.ssh/*.pub 2>/dev/null || true
+        chmod 644 /home/developer/.ssh/known_hosts* 2>/dev/null || true
+    fi
+
+    # Handle SSH config: copy from host and strip problematic directives
+    if [ -f /home/developer/.ssh-host/config ]; then
+        # Copy host config but remove ControlPath/ControlMaster directives that point to non-writable locations
+        # We'll add our own at the end to ensure they take precedence
+        grep -v '^\s*ControlPath' /home/developer/.ssh-host/config | \
+            grep -v '^\s*ControlMaster' | \
+            grep -v '^\s*ControlPersist' > /home/developer/.ssh/config 2>/dev/null || true
+
+        # Add our own ControlPath settings at the end (these take precedence over earlier Host * blocks)
+        cat >> /home/developer/.ssh/config << 'SSHCONF'
+
+# Container override: use writable socket directory
+Host *
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlMaster auto
+  ControlPersist 10m
+SSHCONF
+        chmod 644 /home/developer/.ssh/config
+    else
+        # No host config - create default with ControlPath
+        cat > /home/developer/.ssh/config << 'SSHCONF'
+Host *
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlMaster auto
+  ControlPersist 10m
+SSHCONF
+        chmod 644 /home/developer/.ssh/config
+    fi
+
+    echo "  SSH setup complete (sockets in ~/.ssh/sockets/)"
+fi
+{% endif %}
 
 # Copy useful files from host Claude config (if mounted at .claude-host)
 # This preserves sandbox's permissive settings.json while getting auth, CLAUDE.md, etc.

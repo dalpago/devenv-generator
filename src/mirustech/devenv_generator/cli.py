@@ -182,8 +182,12 @@ _gpg_forwarder_process: subprocess.Popen | None = None
 _serena_process: subprocess.Popen | None = None
 
 
-def _start_serena_server(port: int = 9121) -> subprocess.Popen | None:
+def _start_serena_server(port: int = 9121, no_browser: bool = False) -> subprocess.Popen | None:
     """Start Serena MCP server in HTTP mode on host.
+
+    Args:
+        port: Port to run server on.
+        no_browser: If True, don't open browser window.
 
     Returns the subprocess if started, None if failed.
     """
@@ -212,14 +216,20 @@ def _start_serena_server(port: int = 9121) -> subprocess.Popen | None:
     # Start Serena in HTTP mode
     try:
         console.print(f"[dim]Starting Serena MCP server on port {port}...[/dim]")
+        cmd = [
+            "uvx",
+            "--from", "git+https://github.com/oraios/serena",
+            "serena", "start-mcp-server",
+            "--transport", "streamable-http",
+            "--port", str(port),
+        ]
+
+        # Disable web dashboard if requested (prevents browser opening)
+        if no_browser:
+            cmd.extend(["--enable-web-dashboard", "False"])
+
         proc = subprocess.Popen(
-            [
-                "uvx",
-                "--from", "git+https://github.com/oraios/serena",
-                "serena", "start-mcp-server",
-                "--transport", "streamable-http",
-                "--port", str(port),
-            ],
+            cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -406,17 +416,18 @@ def _run_sandbox(
         os.execvp(cmd[0], cmd)
 
 
-@click.group(invoke_without_command=True)
+@click.group(invoke_without_command=True, context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False})
 @click.version_option()
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
-def main(ctx: click.Context) -> None:
+def main(ctx: click.Context, args: tuple[str, ...]) -> None:
     """Run Claude Code on your projects in an isolated Docker container.
 
     \b
     Usage:
         devenv                      # Current directory, starts Claude
-        devenv run ~/dev/myproject  # Specific project
-        devenv run --shell          # Drop to shell instead of Claude
+        devenv ~/dev/myproject      # Specific project
+        devenv --shell              # Drop to shell instead of Claude
 
     \b
     Container management:
@@ -432,7 +443,91 @@ def main(ctx: click.Context) -> None:
     """
     # Default to 'run' subcommand if no subcommand given
     if ctx.invoked_subcommand is None:
-        ctx.invoke(run)
+        # Create a new context for the run command with the collected args
+        run_ctx = run.make_context("run", list(args), parent=ctx)
+        with run_ctx:
+            run.invoke(run_ctx)
+
+
+@main.command("help")
+def help_command() -> None:
+    """Show comprehensive help and usage guide."""
+    console.print("[bold cyan]devenv - Isolated Docker environments for Claude Code[/bold cyan]")
+    console.print()
+    console.print("Run Claude Code on your projects in isolated, reproducible Docker containers.")
+    console.print()
+
+    console.print("[bold]Quick Start:[/bold]")
+    console.print("  devenv                      # Run in current directory")
+    console.print("  devenv run ~/dev/myproject  # Run in specific project")
+    console.print("  devenv new ~/newproject     # Create new project with devcontainer")
+    console.print()
+
+    console.print("[bold]Common Commands:[/bold]")
+    console.print()
+    console.print("  [cyan]run[/cyan] [PATH...]        Run sandbox (default if no command given)")
+    console.print("                        Options: --shell, --detach, --profile, --start-serena")
+    console.print()
+    console.print("  [cyan]new[/cyan] PATH            Create new project with devcontainer")
+    console.print()
+    console.print("  [cyan]attach[/cyan] [NAME]       Attach to running sandbox")
+    console.print("  [cyan]stop[/cyan] [NAME]         Stop running sandbox")
+    console.print("  [cyan]start[/cyan] [NAME]        Start stopped sandbox")
+    console.print("  [cyan]cd[/cyan] [NAME]           CD into sandbox directory")
+    console.print("  [cyan]status[/cyan]              List all sandboxes")
+    console.print("  [cyan]rm[/cyan] [NAME]           Remove sandbox and volumes")
+    console.print("  [cyan]clean[/cyan]               Clean up stopped sandboxes")
+    console.print()
+
+    console.print("[bold]Profile Management:[/bold]")
+    console.print("  [cyan]profiles help[/cyan]       Detailed guide about profiles")
+    console.print("  [cyan]profiles list[/cyan]       List available profiles")
+    console.print("  [cyan]profiles show[/cyan]       Show default profile details")
+    console.print("  [cyan]profiles create[/cyan]     Create custom profile")
+    console.print("  [cyan]profiles edit[/cyan]       Edit profile in $EDITOR")
+    console.print()
+
+    console.print("[bold]Configuration:[/bold]")
+    console.print("  [cyan]config show[/cyan]         Show registry configuration")
+    console.print("  [cyan]config set-registry[/cyan] Configure container registry")
+    console.print()
+
+    console.print("[bold]Diagnostics:[/bold]")
+    console.print("  [cyan]doctor[/cyan]              Run system diagnostics")
+    console.print("  [cyan]completions[/cyan]         Generate shell completions")
+    console.print()
+
+    console.print("[bold]MCP Servers:[/bold]")
+    console.print("  Serena and context7 are enabled by default (configured in profile)")
+    console.print("  Disable with: devenv run --no-serena")
+    console.print("  Enable browser: devenv run --serena-browser")
+    console.print()
+
+    console.print("[bold]Examples:[/bold]")
+    console.print("  # Quick start in current directory (Serena enabled by default)")
+    console.print("  devenv")
+    console.print()
+    console.print("  # Disable Serena if you don't need it")
+    console.print("  devenv run --no-serena")
+    console.print()
+    console.print("  # Enable Serena browser dashboard")
+    console.print("  devenv run --serena-browser")
+    console.print()
+    console.print("  # Create custom profile and use it")
+    console.print("  devenv profiles create myprofile")
+    console.print("  devenv profiles edit myprofile")
+    console.print("  devenv run ~/myproject --profile myprofile")
+    console.print()
+    console.print("  # Attach to running sandbox")
+    console.print("  devenv attach myproject")
+    console.print()
+
+    console.print("[bold]Getting Help:[/bold]")
+    console.print("  devenv --help               Show all commands")
+    console.print("  devenv <command> --help     Show command-specific help")
+    console.print("  devenv profiles help        Detailed profiles guide")
+    console.print()
+    console.print("[dim]For more information, visit: https://github.com/yourusername/devenv-generator[/dim]")
 
 
 @main.command("run")
@@ -440,7 +535,7 @@ def main(ctx: click.Context) -> None:
 @click.option(
     "--profile",
     "-p",
-    default="mirustech",
+    default="default",
     help="Profile name or path to YAML file (optional, auto-detects from project)",
 )
 @click.option(
@@ -494,15 +589,20 @@ def main(ctx: click.Context) -> None:
     help="Disable registry even if configured",
 )
 @click.option(
-    "--start-serena",
-    is_flag=True,
-    default=False,
-    help="Start Serena MCP server on host in HTTP mode",
+    "--start-serena/--no-serena",
+    default=None,
+    help="Start Serena MCP server (default: from profile, usually enabled)",
 )
 @click.option(
     "--serena-port",
-    default=9121,
-    help="Port for Serena HTTP server (default: 9121)",
+    type=int,
+    default=None,
+    help="Port for Serena HTTP server (default: from profile, usually 9121)",
+)
+@click.option(
+    "--serena-browser/--no-serena-browser",
+    default=None,
+    help="Open/disable browser dashboard (default: from profile, usually disabled)",
 )
 @click.option(
     "--no-cache",
@@ -521,8 +621,9 @@ def run(
     python_version: str | None,
     push_to_registry: bool,
     no_registry: bool,
-    start_serena: bool,
-    serena_port: int,
+    start_serena: bool | None,
+    serena_port: int | None,
+    serena_browser: bool | None,
     no_cache: bool,
 ) -> None:
     """Run a sandbox with the specified project paths.
@@ -583,6 +684,11 @@ def run(
     # Override Python version if detected or specified
     if python_version:
         config.python.version = python_version
+
+    # Merge MCP settings: CLI flags override profile defaults
+    effective_start_serena = start_serena if start_serena is not None else config.mcp.enable_serena
+    effective_serena_port = serena_port if serena_port is not None else config.mcp.serena_port
+    effective_serena_browser = serena_browser if serena_browser is not None else config.mcp.serena_browser
 
     # Load settings to check for registry configuration
     settings = get_settings()
@@ -685,8 +791,8 @@ def run(
         console.print(f"  {spec.host_path} → {spec.container_path}{mode_str}")
 
     # Start Serena MCP server on host if requested
-    if start_serena:
-        _start_serena_server(port=serena_port)
+    if effective_start_serena:
+        _start_serena_server(port=effective_serena_port, no_browser=not effective_serena_browser)
 
     # Determine if we can skip the build
     if not config_changed and image_exists and not no_cache and not skip_build:
@@ -700,7 +806,7 @@ def run(
         detach=detach,
         shell=shell,
         skip_build=skip_build,
-        serena_port=serena_port if start_serena else None,
+        serena_port=effective_serena_port if effective_start_serena else None,
         no_cache=no_cache or auto_no_cache,
     )
 
@@ -1044,8 +1150,8 @@ def _check_serena_port() -> tuple[bool, str]:
 def _check_profile_valid() -> tuple[bool, str]:
     """Check if the default profile is valid."""
     try:
-        config = get_bundled_profile("mirustech")
-        return True, f"Default profile 'mirustech' is valid (Python {config.python.version})"
+        config = get_bundled_profile("default")
+        return True, f"Default profile 'default' is valid (Python {config.python.version})"
     except Exception as e:
         return False, f"Default profile invalid: {e}"
 
@@ -1864,7 +1970,7 @@ complete -c devenv -n "__fish_seen_subcommand_from run new" -a "(__fish_complete
 @click.option(
     "--profile",
     "-p",
-    default="mirustech",
+    default="default",
     help="Profile name or path to YAML file",
 )
 @click.option(
@@ -1926,6 +2032,47 @@ def profiles() -> None:
     pass
 
 
+@profiles.command("help")
+def profiles_help() -> None:
+    """Show detailed help about profiles and how to use them."""
+    console.print("[bold cyan]What are profiles?[/bold cyan]")
+    console.print("Profiles define the base container environment: Python version, packages, and tools.")
+    console.print()
+
+    console.print("[bold cyan]Profile locations:[/bold cyan]")
+    console.print("  • Bundled: Built into devenv (read-only)")
+    console.print("  • User: ~/.config/devenv-generator/profiles/ (customizable)")
+    console.print()
+
+    console.print("[bold cyan]Common workflows:[/bold cyan]")
+    console.print()
+    console.print("[bold]1. View available profiles:[/bold]")
+    console.print("   devenv profiles list")
+    console.print()
+    console.print("[bold]2. Inspect a profile:[/bold]")
+    console.print("   devenv profiles show          # Show default profile")
+    console.print("   devenv profiles show myprofile")
+    console.print()
+    console.print("[bold]3. Create a custom profile:[/bold]")
+    console.print("   devenv profiles create myprofile")
+    console.print("   # Creates a copy of 'default' in ~/.config/devenv-generator/profiles/")
+    console.print()
+    console.print("[bold]4. Edit a profile:[/bold]")
+    console.print("   devenv profiles edit myprofile")
+    console.print("   # Opens in $EDITOR, copies bundled profiles to ~/.config first")
+    console.print()
+    console.print("[bold]5. Use a profile:[/bold]")
+    console.print("   devenv run ~/myproject --profile myprofile")
+    console.print("   devenv new ~/newproject --profile myprofile")
+    console.print()
+    console.print("[bold cyan]Tips:[/bold cyan]")
+    console.print("  • Bundled profiles are read-only - 'edit' will copy them to ~/.config first")
+    console.print("  • User profiles override bundled profiles with the same name")
+    console.print("  • Use 'devenv profiles path <name>' to see where a profile is loaded from")
+    console.print()
+    console.print("Run 'devenv profiles <command> --help' for detailed command help.")
+
+
 @profiles.command("list")
 def list_profiles() -> None:
     """List available profiles."""
@@ -1935,7 +2082,7 @@ def list_profiles() -> None:
     table.add_column("Python")
 
     # Bundled profiles
-    bundled = ["mirustech"]
+    bundled = ["default"]
     for profile_name in bundled:
         try:
             profile = get_bundled_profile(profile_name)
@@ -1965,9 +2112,9 @@ def list_profiles() -> None:
 
 
 @profiles.command("show")
-@click.argument("name")
+@click.argument("name", default="default", required=False)
 def show_profile(name: str) -> None:
-    """Show profile details."""
+    """Show profile details (defaults to 'default' profile)."""
     try:
         profile = get_bundled_profile(name)
     except FileNotFoundError:
@@ -2005,34 +2152,207 @@ def show_profile(name: str) -> None:
     for pkg in profile.node_packages:
         console.print(f"  - {pkg}")
 
+    console.print()
+    console.print("[bold]MCP Servers:[/bold]")
+    console.print(f"  Serena: {'enabled' if profile.mcp.enable_serena else 'disabled'}")
+    if profile.mcp.enable_serena:
+        console.print(f"    Port: {profile.mcp.serena_port}")
+        console.print(f"    Browser: {'enabled' if profile.mcp.serena_browser else 'disabled'}")
+    console.print(f"  context7: {'enabled' if profile.mcp.enable_context7 else 'disabled'}")
+
 
 @profiles.command("create")
 @click.argument("name")
+@click.option(
+    "--from-profile",
+    "-f",
+    default="default",
+    help="Profile to copy from (default: default)",
+)
 @click.option(
     "--output",
     "-o",
     default=None,
     help="Output path (default: ~/.config/devenv-generator/profiles/)",
 )
-def create_profile(name: str, output: str | None) -> None:
-    """Create a new profile template."""
+def create_profile(name: str, from_profile: str, output: str | None) -> None:
+    """Create a new profile by copying an existing one.
+
+    By default, copies from the 'default' bundled profile.
+    """
     if output:
         output_path = Path(output)
     else:
         output_path = Path(f"~/.config/devenv-generator/profiles/{name}.yaml").expanduser()
 
+    # Check if output file already exists
+    if output_path.exists():
+        console.print(f"[red]Profile already exists:[/red] {output_path}")
+        console.print("Use a different name or delete the existing profile first")
+        raise SystemExit(1)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    profile = ProfileConfig(
-        name=name,
-        description=f"Custom profile: {name}",
-    )
+    # Load the source profile
+    try:
+        source_profile = get_bundled_profile(from_profile)
+        console.print(f"[dim]Copying from bundled profile:[/dim] {from_profile}")
+    except FileNotFoundError:
+        # Try user profile
+        user_profile_path = Path(f"~/.config/devenv-generator/profiles/{from_profile}.yaml").expanduser()
+        if user_profile_path.exists():
+            source_profile = load_profile(user_profile_path)
+            console.print(f"[dim]Copying from user profile:[/dim] {from_profile}")
+        else:
+            console.print(f"[red]Source profile not found:[/red] {from_profile}")
+            console.print("Use 'devenv profiles list' to see available profiles")
+            raise SystemExit(1)
 
+    # Update name and description for the new profile
+    source_profile.name = name
+    source_profile.description = f"Custom profile based on {from_profile}"
+
+    # Write to output file
     with output_path.open("w") as f:
-        yaml.dump(profile.model_dump(), f, default_flow_style=False, sort_keys=False)
+        yaml.dump(source_profile.model_dump(), f, default_flow_style=False, sort_keys=False)
 
-    console.print(f"[green]Created profile:[/green] {output_path}")
-    console.print("Edit this file to customize your development environment.")
+    console.print(f"[green]✓ Created profile:[/green] {output_path}")
+    console.print(f"[dim]Based on:[/dim] {from_profile}")
+    console.print()
+    console.print("Edit this file to customize your development environment:")
+    console.print(f"  devenv profiles edit {name}")
+
+
+@profiles.command("edit")
+@click.argument("name", default="default", required=False)
+def edit_profile(name: str) -> None:
+    """Edit a profile in your default editor (defaults to 'default' profile).
+
+    If the profile is bundled (read-only), it will be copied to
+    ~/.config/devenv-generator/profiles/ first, then opened for editing.
+    """
+    user_profiles_dir = Path("~/.config/devenv-generator/profiles").expanduser()
+    user_profile_path = user_profiles_dir / f"{name}.yaml"
+
+    # Check if user profile already exists
+    if user_profile_path.exists():
+        profile_path = user_profile_path
+        console.print(f"[dim]Editing user profile:[/dim] {name}")
+    else:
+        # Check if it's a bundled profile
+        try:
+            bundled_profile = get_bundled_profile(name)
+            # Copy to user directory first
+            user_profiles_dir.mkdir(parents=True, exist_ok=True)
+            with user_profile_path.open("w") as f:
+                yaml.dump(bundled_profile.model_dump(), f, default_flow_style=False, sort_keys=False)
+            profile_path = user_profile_path
+            console.print(f"[yellow]Copied bundled profile to:[/yellow] {user_profile_path}")
+            console.print("[dim]You can now edit this local copy[/dim]")
+        except FileNotFoundError:
+            console.print(f"[red]Profile not found:[/red] {name}")
+            console.print("Use 'devenv profiles list' to see available profiles")
+            console.print(f"Or create a new one with: devenv profiles create {name}")
+            raise SystemExit(1)
+
+    # Open in editor
+    editor = os.environ.get("VISUAL", os.environ.get("EDITOR", "vi"))
+    console.print(f"[dim]Opening {profile_path} with {editor}...[/dim]")
+    os.execvp(editor, [editor, str(profile_path)])
+
+
+@profiles.command("path")
+@click.argument("name", default="default", required=False)
+@click.option(
+    "--exists-only",
+    is_flag=True,
+    help="Exit with code 0 if profile exists, 1 otherwise (for scripting)",
+)
+def profile_path(name: str, exists_only: bool) -> None:
+    """Show the file path where a profile is loaded from (defaults to 'default' profile).
+
+    Useful for finding where a profile is defined, whether it's
+    bundled with devenv or in your user config directory.
+    """
+    # Check user profiles first
+    user_profile_path = Path(f"~/.config/devenv-generator/profiles/{name}.yaml").expanduser()
+    if user_profile_path.exists():
+        if exists_only:
+            raise SystemExit(0)
+        console.print(str(user_profile_path))
+        console.print(f"[dim](user profile)[/dim]")
+        return
+
+    # Check bundled profiles
+    try:
+        # Try to get the actual file path from importlib.resources
+        from importlib.resources import files
+        profiles_dir = files("mirustech.devenv_generator").joinpath("profiles")
+        bundled_path = profiles_dir.joinpath(f"{name}.yaml")
+
+        # Verify it exists by trying to load it
+        _ = get_bundled_profile(name)
+
+        if exists_only:
+            raise SystemExit(0)
+
+        # For bundled profiles, show the package location
+        console.print(str(bundled_path))
+        console.print(f"[dim](bundled profile)[/dim]")
+        return
+    except (FileNotFoundError, TypeError, AttributeError):
+        pass
+
+    # Profile not found
+    if exists_only:
+        raise SystemExit(1)
+
+    console.print(f"[red]Profile not found:[/red] {name}")
+    console.print("Use 'devenv profiles list' to see available profiles")
+    raise SystemExit(1)
+
+
+@profiles.command("delete")
+@click.argument("name")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Skip confirmation prompt",
+)
+def delete_profile(name: str, force: bool) -> None:
+    """Delete a user profile from ~/.config/devenv-generator/profiles/.
+
+    Note: You cannot delete bundled profiles. This only removes profiles
+    you have created or edited in your user config directory.
+    """
+    user_profile_path = Path(f"~/.config/devenv-generator/profiles/{name}.yaml").expanduser()
+
+    # Check if it exists as user profile
+    if not user_profile_path.exists():
+        # Check if it's a bundled profile
+        try:
+            _ = get_bundled_profile(name)
+            console.print(f"[red]Cannot delete bundled profile:[/red] {name}")
+            console.print("[dim]Bundled profiles are read-only and part of devenv installation[/dim]")
+            raise SystemExit(1)
+        except FileNotFoundError:
+            console.print(f"[red]Profile not found:[/red] {name}")
+            console.print("Use 'devenv profiles list' to see available profiles")
+            raise SystemExit(1)
+
+    # Confirm deletion
+    if not force:
+        from rich.prompt import Confirm
+        console.print(f"[yellow]This will delete:[/yellow] {user_profile_path}")
+        if not Confirm.ask("Are you sure?", default=False):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    # Delete the file
+    user_profile_path.unlink()
+    console.print(f"[green]✓ Deleted profile:[/green] {name}")
+    console.print(f"[dim]Removed:[/dim] {user_profile_path}")
 
 
 # Config command group
@@ -2168,7 +2488,7 @@ DEVENV_REGISTRY__AUTO_PUSH=false
 
 # Keep old commands as aliases for backwards compatibility
 @main.command("generate", hidden=True)
-@click.option("--profile", "-p", default="mirustech")
+@click.option("--profile", "-p", default="default")
 @click.option("--output", "-o", default=".")
 @click.option("--project-name", "-n", default=None)
 @click.option("--python-version", default=None)
@@ -2183,7 +2503,7 @@ def generate(ctx: click.Context, profile: str, output: str, project_name: str | 
 @click.option("--mount", "-m", "mounts", multiple=True, required=True)
 @click.option("--name", "-n", "sandbox_name", default=None)
 @click.option("--output", "-o", default=None)
-@click.option("--profile", "-p", default="mirustech")
+@click.option("--profile", "-p", default="default")
 @click.option("--use-host-claude-config", is_flag=True, default=False)
 @click.pass_context
 def sandbox_cmd(

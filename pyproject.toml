@@ -45,6 +45,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mirustech"]
+artifacts = [
+    "src/mirustech/devenv_generator/profiles/*.yaml",
+    "src/mirustech/devenv_generator/templates/*.j2",
+]
 
 [tool.ruff]
 line-length = 100

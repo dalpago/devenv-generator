@@ -40,7 +40,7 @@ def get_bundled_profile(profile_name: str) -> ProfileConfig:
     """Load a bundled profile from the package.
 
     Args:
-        profile_name: Name of the bundled profile (e.g., 'mirustech').
+        profile_name: Name of the bundled profile (e.g., 'default').
 
     Returns:
         Validated ProfileConfig instance.
@@ -48,6 +48,16 @@ def get_bundled_profile(profile_name: str) -> ProfileConfig:
     Raises:
         FileNotFoundError: If bundled profile doesn't exist.
     """
+    # Backward compatibility: map "mirustech" to "default"
+    if profile_name == "mirustech":
+        profile_name = "default"
+        logger.warning(
+            "profile_deprecated",
+            old_name="mirustech",
+            new_name="default",
+            message="Profile 'mirustech' is deprecated, use 'default' instead",
+        )
+
     # Try multiple locations for the profile
     # __file__ is src/mirustech/devenv_generator/generator.py
     # Repo root is 4 levels up: generator.py -> devenv_generator -> mirustech -> src -> repo_root

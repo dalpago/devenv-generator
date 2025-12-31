@@ -42,8 +42,10 @@ services:
       # GPG keys for commit signing
       - ~/.gnupg:/home/developer/.gnupg
 {% if profile.mounts.ssh_keys %}
-      # SSH keys from host (for git over SSH)
-      - ~/.ssh:/home/developer/.ssh:ro
+      # SSH keys from host (mounted to .ssh-host, copied at runtime)
+      - ~/.ssh:/home/developer/.ssh-host:ro
+      # SSH agent socket (for ssh-add -l and agent forwarding)
+      - ${SSH_AUTH_SOCK:-/run/host-services/ssh-auth.sock}:/ssh-agent
 {% endif %}
 {% if profile.docker_cli %}
       # Docker socket for Docker-in-Docker
@@ -86,6 +88,10 @@ services:
       - SERENA_MCP_URL
       # Happy Coder server URL (for self-hosted Happy instances)
       - HAPPY_SERVER_URL
+{% if profile.mounts.ssh_keys %}
+      # SSH agent socket (for ssh-add -l and agent forwarding)
+      - SSH_AUTH_SOCK=/ssh-agent
+{% endif %}
 {% for key, value in profile.environment.items() %}
       - {{ key }}={{ value }}
 {% endfor %}

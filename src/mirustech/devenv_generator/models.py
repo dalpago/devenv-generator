@@ -57,6 +57,27 @@ class NetworkConfig(BaseModel):
         ]
 
 
+class MCPConfig(BaseModel):
+    """MCP server configuration."""
+
+    enable_serena: bool = Field(
+        default=True,
+        description="Start Serena MCP server on host in HTTP mode",
+    )
+    serena_port: int = Field(
+        default=9121,
+        description="Port for Serena HTTP server",
+    )
+    serena_browser: bool = Field(
+        default=False,
+        description="Open browser dashboard when starting Serena",
+    )
+    enable_context7: bool = Field(
+        default=True,
+        description="Enable context7 MCP server for library documentation",
+    )
+
+
 class MountsConfig(BaseModel):
     """Mount configuration for the container."""
 
@@ -77,6 +98,7 @@ class ProfileConfig(BaseModel):
     name: str = Field(..., description="Profile name")
     description: str = Field(default="", description="Profile description")
     python: PythonConfig = Field(default_factory=PythonConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
     uvx_tools: list[str] = Field(
         default_factory=lambda: ["pre-commit", "ruff", "deptry", "mypy"],
         description="Python tools to install globally via uvx",
@@ -129,7 +151,7 @@ class GeneratorConfig(BaseModel):
         description="Directory containing profile YAML files",
     )
     default_profile: str = Field(
-        default="mirustech",
+        default="default",
         description="Default profile to use if none specified",
     )
 
