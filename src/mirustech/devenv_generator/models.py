@@ -92,6 +92,47 @@ class MountsConfig(BaseModel):
     )
 
 
+class PortConfig(BaseModel):
+    """Single port mapping specification."""
+
+    container: int = Field(..., description="Port inside container")
+    host: int | None = Field(
+        default=None,
+        description="Port on host (auto-assign if None)"
+    )
+    protocol: Literal["tcp", "udp"] = Field(
+        default="tcp",
+        description="Protocol (tcp or udp)"
+    )
+    description: str = Field(
+        default="",
+        description="Human-readable description of service"
+    )
+
+    @property
+    def host_port(self) -> int:
+        """Get host port, defaulting to container port if not specified."""
+        return self.host or self.container
+
+
+class PortsConfig(BaseModel):
+    """Port exposure configuration."""
+
+    ports: list[PortConfig] = Field(
+        default_factory=list,
+        description="Port mappings to expose"
+    )
+
+    @field_validator("ports")
+    @classmethod
+    def validate_unique_host_ports(cls, ports: list[PortConfig]) -> list[PortConfig]:
+        """Ensure no duplicate host ports."""
+        host_ports = [p.host_port for p in ports]
+        if len(host_ports) != len(set(host_ports)):
+            raise ValueError("Duplicate host ports detected")
+        return ports
+
+
 class ProfileConfig(BaseModel):
     """Complete profile configuration for a development environment."""
 
@@ -149,6 +190,14 @@ class ProfileConfig(BaseModel):
     docker_cli: bool = Field(
         default=True,
         description="Install Docker CLI and mount docker.sock for Docker-in-Docker",
+    )
+    playwright: bool = Field(
+        default=False,
+        description="Install Playwright browser dependencies (Chromium, Firefox, WebKit system libraries)",
+    )
+    ports: PortsConfig = Field(
+        default_factory=PortsConfig,
+        description="Port mappings to expose from container to host",
     )
 
 

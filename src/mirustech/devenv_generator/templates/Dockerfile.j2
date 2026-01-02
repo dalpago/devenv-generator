@@ -18,7 +18,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 {% endif %}
     nodejs \
     npm \
+    sudo \
+    tini \
     && rm -rf /var/lib/apt/lists/*
+
+{% if profile.playwright %}
+# Install Playwright browser dependencies for Chromium/Firefox/WebKit
+# Required for running browser-based tests (Playwright, Puppeteer, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libnspr4 \
+    libnss3 \
+    libdbus-1-3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxcb1 \
+    libxkbcommon0 \
+    libatspi2.0-0 \
+    libx11-6 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libcairo2 \
+    libpango-1.0-0 \
+    libasound2 \
+    libxshmfence1 \
+    libdrm2 \
+    libxrender1 \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+{% endif %}
 
 {% if 'fd-find' in profile.system_packages %}
 # Create symlink for fd (Debian names it fdfind)
@@ -53,6 +86,12 @@ RUN {% for tool in profile.uvx_tools %}uv tool install {{ tool }}{% if not loop.
 # Install Node.js packages globally
 RUN npm install -g {% for pkg in profile.node_packages %}{{ pkg }}{% if not loop.last %} {% endif %}{% endfor %}
 
+{% endif %}
+
+{% if profile.playwright %}
+# Install Playwright browsers (Chromium, Firefox, WebKit)
+# System dependencies already installed above, just need browsers
+RUN npx playwright install chromium firefox webkit
 {% endif %}
 
 {% if profile.docker_cli %}
@@ -112,6 +151,12 @@ RUN set -e; \
     && chown -R $USER_UID:$USER_GID /home/$USERNAME \
     && mkdir -p /Users \
     && chown $USER_UID:$USER_GID /Users
+
+# Grant passwordless sudo access to developer user
+RUN set -e; \
+    ACTUAL_USERNAME=$(getent passwd $USER_UID | cut -d: -f1); \
+    echo "$ACTUAL_USERNAME ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$ACTUAL_USERNAME \
+    && chmod 0440 /etc/sudoers.d/$ACTUAL_USERNAME
 
 {% if profile.docker_cli %}
 # Add user to docker group (GID matches docker.sock group on host)
@@ -530,10 +575,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 {% if profile.network.mode == 'restricted' %}
 # For restricted network mode, run as root first to apply iptables, then drop to user
 USER root
-ENTRYPOINT ["network-entrypoint"]
+ENTRYPOINT ["/usr/bin/tini", "--", "network-entrypoint"]
 {% else %}
-# Use startup script as entrypoint
-ENTRYPOINT ["devenv-start"]
+# Use startup script as entrypoint with tini for proper signal handling
+ENTRYPOINT ["/usr/bin/tini", "--", "devenv-start"]
 {% endif %}
 
 # Default is to start Claude (handled by entrypoint when no args)

@@ -87,3 +87,6 @@ mounts:
   ssh_keys: true
   claude_config: volume
   happy_config: true
+
+# Enable Playwright browser dependencies for frontend testing
+playwright: true

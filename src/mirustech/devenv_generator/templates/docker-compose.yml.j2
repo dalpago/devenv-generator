@@ -67,6 +67,13 @@ services:
     working_dir: /workspace
     stdin_open: true
     tty: true
+{% if profile.ports.ports %}
+    ports:
+{% for port_config in profile.ports.ports %}
+      # {{ port_config.description or 'Port ' ~ port_config.container }}
+      - "127.0.0.1:{{ port_config.host_port }}:{{ port_config.container }}/{{ port_config.protocol }}"
+{% endfor %}
+{% endif %}
 {% if profile.network.mode == 'none' %}
     # Completely disable networking
     network_mode: "none"

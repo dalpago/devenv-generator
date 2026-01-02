@@ -205,6 +205,13 @@ class DevEnvGenerator:
         Returns:
             Rendered docker-compose.yml content.
         """
+        # Warn if ports configured with network mode 'none'
+        if self.profile.ports.ports and self.profile.network.mode == "none":
+            logger.warning(
+                "ports_with_network_none",
+                message="Port mappings configured but network mode is 'none' - ports will not be accessible"
+            )
+
         template = self.env.get_template("docker-compose.yml.j2")
         docker_gid = get_docker_socket_gid()
         user_uid, user_gid = get_host_user_ids()
@@ -445,6 +452,13 @@ class SandboxGenerator:
         Returns:
             Rendered docker-compose.yml content.
         """
+        # Warn if ports configured with network mode 'none'
+        if self.profile.ports.ports and self.profile.network.mode == "none":
+            logger.warning(
+                "ports_with_network_none",
+                message="Port mappings configured but network mode is 'none' - ports will not be accessible"
+            )
+
         template = self.env.get_template("docker-compose.sandbox.yml.j2")
         has_cow_mounts = any(m.mode == "cow" for m in self.mounts)
         default_workdir = self.mounts[0].host_path.name if self.mounts else ""
