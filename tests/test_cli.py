@@ -131,3 +131,149 @@ class TestStatusCommand:
 
         # Either shows sandboxes or "No sandboxes found"
         assert result.exit_code == 0
+
+
+# Port Parsing Tests
+
+
+def test_parse_port_spec_simple() -> None:
+    """Parse simple port spec (8000)."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    port = _parse_port_spec("8000")
+    assert port.container == 8000
+    assert port.host_port == 8000
+    assert port.protocol == "tcp"
+
+
+def test_parse_port_spec_host_container() -> None:
+    """Parse host:container spec (8080:3000)."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    port = _parse_port_spec("8080:3000")
+    assert port.container == 3000
+    assert port.host_port == 8080
+    assert port.protocol == "tcp"
+
+
+def test_parse_port_spec_with_protocol() -> None:
+    """Parse spec with protocol (5432/tcp)."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    port = _parse_port_spec("5432/tcp")
+    assert port.container == 5432
+    assert port.host_port == 5432
+    assert port.protocol == "tcp"
+
+
+def test_parse_port_spec_udp() -> None:
+    """Parse UDP port spec (8080:3000/udp)."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    port = _parse_port_spec("8080:3000/udp")
+    assert port.container == 3000
+    assert port.host_port == 8080
+    assert port.protocol == "udp"
+
+
+def test_parse_port_spec_invalid_protocol() -> None:
+    """Invalid protocol exits with error."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    with pytest.raises(SystemExit):
+        _parse_port_spec("8000/sctp")
+
+
+def test_parse_port_spec_invalid_format() -> None:
+    """Invalid port format exits with error."""
+    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec
+
+    with pytest.raises(SystemExit):
+        _parse_port_spec("not-a-port")
+
+    with pytest.raises(SystemExit):
+        _parse_port_spec("abc:8000")
+
+
+# Port Conflict Detection Tests
+
+
+def test_check_port_conflicts_no_conflict() -> None:
+    """No conflict when port is free."""
+    from unittest.mock import MagicMock, patch
+
+    from mirustech.devenv_generator.commands.lifecycle import _check_port_conflicts
+    from mirustech.devenv_generator.models import PortConfig
+
+    with patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run:
+        # lsof returns non-zero when port is free
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_run.return_value = mock_result
+
+        ports = [PortConfig(container=8000, host=8000)]
+        _check_port_conflicts(ports, "test-sandbox")
+
+        mock_run.assert_called_once()
+
+
+def test_check_port_conflicts_with_conflict() -> None:
+    """SystemExit when port is in use."""
+    from unittest.mock import MagicMock, patch
+
+    from mirustech.devenv_generator.commands.lifecycle import _check_port_conflicts
+    from mirustech.devenv_generator.models import PortConfig
+
+    with patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run:
+        # lsof returns zero when port is in use
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "python  12345 user   TCP *:8000 (LISTEN)"
+        mock_run.return_value = mock_result
+
+        ports = [PortConfig(container=8000, host=8000)]
+
+        with pytest.raises(SystemExit):
+            _check_port_conflicts(ports, "test-sandbox")
+
+
+def test_check_port_conflicts_multiple_ports() -> None:
+    """Checks all ports in list."""
+    from unittest.mock import MagicMock, patch
+
+    from mirustech.devenv_generator.commands.lifecycle import _check_port_conflicts
+    from mirustech.devenv_generator.models import PortConfig
+
+    with patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run:
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_run.return_value = mock_result
+
+        ports = [
+            PortConfig(container=8000, host=8000),
+            PortConfig(container=5173, host=5173),
+            PortConfig(container=3000, host=3000),
+        ]
+        _check_port_conflicts(ports, "test-sandbox")
+
+        assert mock_run.call_count == 3
+
+
+# CLI Help Text Test
+
+
+class TestRunCommandPorts:
+    """Tests for devenv run with port flags."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_run_help_shows_port_options(self, runner: CliRunner) -> None:
+        """Help text includes port options."""
+        result = runner.invoke(main, ["run", "--help"])
+        assert "--expose-port" in result.output
+        assert "--no-ports" in result.output
