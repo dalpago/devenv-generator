@@ -33,6 +33,9 @@ devenv run --shell
 # Run in background
 devenv run -d
 
+# Run with ports exposed (for web development)
+devenv run --expose-port 8000 --expose-port 5173
+
 # Multiple projects (second is read-only)
 devenv run ~/proj1 ~/proj2:ro
 
@@ -58,6 +61,55 @@ devenv rm [name]
 # Clean up unused sandboxes and images
 devenv clean --all
 ```
+
+## Port Exposure
+
+Expose ports from your container to access web servers, APIs, or other services running inside:
+
+```bash
+# Start with ports exposed
+devenv run --expose-port 8000
+devenv run --expose-port 8000 --expose-port 5173  # Multiple ports
+
+# Dynamically expose ports on running container
+devenv expose 8000
+devenv expose 8080:3000        # Map host:container
+devenv expose 5432/udp         # UDP protocol
+
+# List exposed ports
+devenv ports
+
+# Remove exposed port
+devenv unexpose 8000
+
+# Start without any ports (even if profile defines them)
+devenv run --no-ports
+```
+
+**Port Formats:**
+- `8000` - Expose container port 8000 on host port 8000 (TCP)
+- `8080:3000` - Map host port 8080 to container port 3000
+- `5432/udp` - Expose UDP port
+- `8080:3000/udp` - Full format with host, container, and protocol
+
+**Static Configuration:**
+
+Define default ports in your profile YAML:
+
+```yaml
+name: webapp
+ports:
+  ports:
+    - container: 8000
+      host: 8000
+      description: "Django dev server"
+      protocol: tcp
+    - container: 5173
+      host: 5173
+      description: "Vite dev server"
+```
+
+All ports bind to `127.0.0.1` (localhost only) for security.
 
 ## Diagnostics & Troubleshooting
 
@@ -145,6 +197,7 @@ commands/
   ├── config.py (3 commands: config group)
   ├── lifecycle.py (5 commands: run, attach, stop, start, cd)
   ├── management.py (3 commands: status, rm, clean)
+  ├── ports.py (3 commands: expose, unexpose, ports)
   └── diagnostics.py (doctor command + DiagnosticRegistry with 17 checks, 5 fixes)
 
 utils/
@@ -239,13 +292,15 @@ devenv run ~/dev/myproject  # Run specific project
 devenv run [PATHS...] [OPTIONS]
 
 Options:
-  --shell, -s            Drop to shell instead of starting Claude
-  --detach, -d           Run in background
-  --python VERSION       Override Python version
+  --shell, -s                Drop to shell instead of starting Claude
+  --detach, -d               Run in background
+  --python VERSION           Override Python version
   --profile, -p NAME         Use a specific profile (default: default)
   --no-host-config           Don't mount ~/.claude (isolated Claude config)
   -o, --output PATH          Custom output directory
   -n, --name NAME            Custom sandbox name
+  --expose-port PORT         Expose port at startup (can be used multiple times)
+  --no-ports                 Disable all ports (overrides profile configuration)
   --start-serena/--no-serena Start/disable Serena MCP server (default: enabled)
   --serena-port PORT         Port for Serena (default: from profile, usually 9121)
   --serena-browser           Open browser dashboard (default: disabled)
