@@ -124,6 +124,73 @@ class TestDevEnvGenerator:
 
         assert "FROM python:3.13-slim" in content
 
+    def test_render_docker_compose_with_ports(self) -> None:
+        """Docker compose includes port mappings."""
+        from mirustech.devenv_generator.models import PortConfig, PortsConfig
+
+        profile = ProfileConfig(
+            name="test",
+            python=PythonConfig(version="3.12"),
+            ports=PortsConfig(ports=[
+                PortConfig(container=8000, host=8000, description="API server"),
+                PortConfig(container=5173, host=5173, description="Vite"),
+            ])
+        )
+        generator = DevEnvGenerator(profile, project_name="test")
+        content = generator.render_docker_compose()
+
+        assert "ports:" in content
+        assert "127.0.0.1:8000:8000/tcp" in content
+        assert "127.0.0.1:5173:5173/tcp" in content
+        assert "# API server" in content
+        assert "# Vite" in content
+
+    def test_render_docker_compose_udp_port(self) -> None:
+        """UDP ports rendered correctly."""
+        from mirustech.devenv_generator.models import PortConfig, PortsConfig
+
+        profile = ProfileConfig(
+            name="test",
+            python=PythonConfig(version="3.12"),
+            ports=PortsConfig(ports=[
+                PortConfig(container=5432, host=5432, protocol="udp"),
+            ])
+        )
+        generator = DevEnvGenerator(profile, project_name="test")
+        content = generator.render_docker_compose()
+
+        assert "127.0.0.1:5432:5432/udp" in content
+
+    def test_render_docker_compose_no_ports(self) -> None:
+        """No port section when ports empty."""
+        profile = ProfileConfig(name="test", python=PythonConfig(version="3.12"))
+        generator = DevEnvGenerator(profile, project_name="test")
+        content = generator.render_docker_compose()
+
+        # Should not have ports section when no ports configured
+        lines = content.split('\n')
+        assert not any(line.strip() == "ports:" for line in lines)
+
+    def test_render_docker_compose_network_none_warning(self, capsys) -> None:
+        """Warning logged when ports with network mode none."""
+        from mirustech.devenv_generator.models import NetworkConfig, PortConfig, PortsConfig
+
+        profile = ProfileConfig(
+            name="test",
+            python=PythonConfig(version="3.12"),
+            network=NetworkConfig(mode="none"),
+            ports=PortsConfig(ports=[
+                PortConfig(container=8000, host=8000),
+            ])
+        )
+        generator = DevEnvGenerator(profile, project_name="test")
+
+        generator.render_docker_compose()
+
+        # structlog outputs to stdout, check for warning message
+        captured = capsys.readouterr()
+        assert "ports will not be accessible" in captured.out
+
 
 class TestNetworkRestriction:
     """Tests for network restriction in generated files."""
