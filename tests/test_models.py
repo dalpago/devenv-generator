@@ -1,10 +1,13 @@
 """Tests for configuration models."""
 
 import pytest
+from pydantic import ValidationError
 
 from mirustech.devenv_generator.models import (
     MountsConfig,
     NetworkConfig,
+    PortConfig,
+    PortsConfig,
     ProfileConfig,
     PythonConfig,
 )
@@ -134,3 +137,112 @@ class TestProfileConfig:
         assert config.name == "full-test"
         assert config.python.version == "3.13"
         assert config.mounts.gitconfig is True
+
+    def test_ports_default_empty(self) -> None:
+        """Ports config is empty by default."""
+        config = ProfileConfig(name="test")
+        assert config.ports.ports == []
+
+    def test_ports_from_dict(self) -> None:
+        """Ports can be loaded from dictionary."""
+        config = ProfileConfig(
+            name="test",
+            ports=PortsConfig(ports=[
+                PortConfig(container=8000, host=8000, description="API")
+            ])
+        )
+        assert len(config.ports.ports) == 1
+        assert config.ports.ports[0].description == "API"
+
+
+class TestPortConfig:
+    """Tests for PortConfig model."""
+
+    def test_container_port_required(self) -> None:
+        """Container port is required."""
+        with pytest.raises(ValidationError):
+            PortConfig()
+
+    def test_host_port_defaults_to_container(self) -> None:
+        """Host port defaults to container port if not specified."""
+        config = PortConfig(container=8000)
+        assert config.host_port == 8000
+
+    def test_host_port_explicit(self) -> None:
+        """Host port can be explicitly set."""
+        config = PortConfig(container=3000, host=8080)
+        assert config.host_port == 8080
+        assert config.container == 3000
+
+    def test_protocol_defaults_to_tcp(self) -> None:
+        """Protocol defaults to tcp."""
+        config = PortConfig(container=8000)
+        assert config.protocol == "tcp"
+
+    def test_protocol_udp(self) -> None:
+        """Protocol can be set to udp."""
+        config = PortConfig(container=5432, protocol="udp")
+        assert config.protocol == "udp"
+
+    def test_invalid_protocol(self) -> None:
+        """Invalid protocol raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PortConfig(container=8000, protocol="sctp")
+
+    def test_description_optional(self) -> None:
+        """Description is optional."""
+        config = PortConfig(container=8000)
+        assert config.description == ""
+
+        config_with_desc = PortConfig(container=8000, description="API server")
+        assert config_with_desc.description == "API server"
+
+
+class TestPortsConfig:
+    """Tests for PortsConfig model."""
+
+    def test_empty_ports_by_default(self) -> None:
+        """Ports list is empty by default."""
+        config = PortsConfig()
+        assert config.ports == []
+
+    def test_single_port(self) -> None:
+        """Can configure single port."""
+        config = PortsConfig(ports=[
+            PortConfig(container=8000, host=8000)
+        ])
+        assert len(config.ports) == 1
+        assert config.ports[0].container == 8000
+
+    def test_multiple_ports(self) -> None:
+        """Can configure multiple ports."""
+        config = PortsConfig(ports=[
+            PortConfig(container=8000, host=8000),
+            PortConfig(container=5173, host=5173),
+            PortConfig(container=3000, host=3000),
+        ])
+        assert len(config.ports) == 3
+
+    def test_duplicate_host_ports_rejected(self) -> None:
+        """Duplicate host ports are rejected."""
+        with pytest.raises(ValueError, match="Duplicate host ports"):
+            PortsConfig(ports=[
+                PortConfig(container=8000, host=8080),
+                PortConfig(container=3000, host=8080),  # Duplicate host port
+            ])
+
+    def test_duplicate_container_ports_allowed(self) -> None:
+        """Duplicate container ports are allowed (different hosts)."""
+        config = PortsConfig(ports=[
+            PortConfig(container=8000, host=8080),
+            PortConfig(container=8000, host=9080),  # Same container, different host
+        ])
+        assert len(config.ports) == 2
+
+    def test_auto_assigned_host_ports_unique(self) -> None:
+        """Auto-assigned host ports don't conflict."""
+        config = PortsConfig(ports=[
+            PortConfig(container=8000),  # Auto: host=8000
+            PortConfig(container=5173),  # Auto: host=5173
+        ])
+        assert len(config.ports) == 2
