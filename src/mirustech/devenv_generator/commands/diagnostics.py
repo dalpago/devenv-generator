@@ -407,7 +407,7 @@ def fix_docker_running() -> tuple[bool, str]:
             return False, "Failed to launch Docker Desktop"
     elif system == "Linux":
         console.print("[dim]Attempting to start Docker service...[/dim]")
-        result = run_command(["sudo", "systemctl", "start", "docker"])
+        result = run_command(["sudo", "systemctl", "start", "docker"], timeout=30)
         if result.returncode == 0:
             time.sleep(3)
             return True, "Docker service started"
@@ -470,11 +470,11 @@ def fix_disk_space() -> tuple[bool, str]:
                 pass
 
     for image in devenv_images:
-        result = run_command(["docker", "rmi", image])
+        result = run_command(["docker", "rmi", image], timeout=60)
         if result.returncode == 0:
             cleaned_items += 1
 
-    run_command(["docker", "image", "prune", "-f"])
+    run_command(["docker", "image", "prune", "-f"], timeout=120)
 
     if cleaned_items > 0:
         return True, f"Cleaned {cleaned_items} items (stopped sandboxes and unused images)"

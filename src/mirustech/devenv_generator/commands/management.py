@@ -152,8 +152,7 @@ def remove_sandbox(name: str | None, force: bool) -> None:
 
         # Stop first
         console.print(f"[dim]Stopping {name}...[/dim]")
-        run_command(["docker", "compose", "-p", name, "down", "-v"], cwd=sandbox_dir,
-            capture_output=True)
+        run_command(["docker", "compose", "-p", name, "down", "-v"], cwd=sandbox_dir, timeout=60)
 
     # Remove the directory
     shutil.rmtree(sandbox_dir)
@@ -274,7 +273,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
                 if dry_run:
                     console.print(f"  [dim]Would remove:[/dim] {name} ({size})")
                 else:
-                    result = run_command(["docker", "rmi", name])
+                    result = run_command(["docker", "rmi", name], timeout=60)
                     if result.returncode == 0:
                         console.print(f"  [green]✓[/green] Removed {name} ({size})")
                         removed_count += 1
@@ -287,7 +286,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
                 if dry_run:
                     console.print(f"  [dim]Would remove:[/dim] {id_[:12]} ({size})")
                 else:
-                    result = run_command(["docker", "rmi", id_])
+                    result = run_command(["docker", "rmi", id_], timeout=60)
                     if result.returncode == 0:
                         console.print(f"  [green]✓[/green] Removed {id_[:12]} ({size})")
                         removed_count += 1

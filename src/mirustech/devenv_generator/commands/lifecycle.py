@@ -251,14 +251,14 @@ def _run_sandbox(
         if no_cache:
             build_cmd.append("--no-cache")
             console.print("[dim]  (forcing rebuild without cache)[/dim]")
-        build_result = run_command(build_cmd, cwd=sandbox_dir)
+        build_result = run_command(build_cmd, cwd=sandbox_dir, timeout=600)
         if build_result.returncode != 0:
             console.print("[red]Build failed[/red]")
             raise SystemExit(1)
 
     if detach:
         console.print(f"[dim]Starting {sandbox_name} in background...[/dim]")
-        result = run_command(["docker", "compose", "-p", sandbox_name, "up", "-d"], cwd=sandbox_dir)
+        result = run_command(["docker", "compose", "-p", sandbox_name, "up", "-d"], cwd=sandbox_dir, timeout=300)
         if result.returncode != 0:
             console.print(f"[red]Failed to start:[/red]\n{result.stderr}")
             raise SystemExit(1)
@@ -449,10 +449,7 @@ def run(
     skip_build = False
     config_changed = False
 
-    image_result = run_command(["docker", "images", "-q", f"{sandbox_name}-dev:latest"],
-        capture_output=True,
-        text=True,
-    )
+    image_result = run_command(["docker", "images", "-q", f"{sandbox_name}-dev:latest"])
     image_exists = bool(image_result.stdout.strip())
 
     if not image_exists:
@@ -594,7 +591,7 @@ def stop_sandbox(name: str | None) -> None:
         raise SystemExit(1)
 
     console.print(f"[dim]Stopping {name}...[/dim]")
-    result = run_command(["docker", "compose", "-p", name, "down"], cwd=sandbox_dir)
+    result = run_command(["docker", "compose", "-p", name, "down"], cwd=sandbox_dir, timeout=60)
 
     if result.returncode == 0:
         console.print(f"[bold green]✓ Stopped:[/bold green] {name}")
