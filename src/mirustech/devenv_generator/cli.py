@@ -21,6 +21,7 @@ from mirustech.devenv_generator.commands.lifecycle import (
     stop_sandbox,
 )
 from mirustech.devenv_generator.commands.management import clean, remove_sandbox, status
+from mirustech.devenv_generator.commands.ports import expose_port, list_ports, unexpose_port
 from mirustech.devenv_generator.commands.profiles import profiles
 from mirustech.devenv_generator.generator import (
     DevEnvGenerator,
@@ -124,6 +125,11 @@ main.add_command(cd_sandbox, name="cd")
 main.add_command(status)
 main.add_command(remove_sandbox)
 main.add_command(clean)
+
+# Register port commands
+main.add_command(expose_port, name="expose")
+main.add_command(list_ports, name="ports")
+main.add_command(unexpose_port, name="unexpose")
 
 # Register diagnostics
 main.add_command(doctor)

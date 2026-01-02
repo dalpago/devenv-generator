@@ -82,6 +82,72 @@ def _load_profile(profile: str) -> ProfileConfig:
         raise SystemExit(1)
 
 
+def _parse_port_spec(spec: str):
+    """Parse port specification string.
+
+    Formats:
+        8000              -> PortConfig(container=8000, host=8000, protocol='tcp')
+        8080:3000         -> PortConfig(container=3000, host=8080, protocol='tcp')
+        5432/tcp          -> PortConfig(container=5432, host=5432, protocol='tcp')
+        8080:3000/udp     -> PortConfig(container=3000, host=8080, protocol='udp')
+    """
+    from mirustech.devenv_generator.models import PortConfig
+
+    # Parse protocol suffix
+    protocol = "tcp"
+    if "/" in spec:
+        spec, protocol = spec.rsplit("/", 1)
+        if protocol not in ("tcp", "udp"):
+            console.print(f"[red]Invalid protocol:[/red] {protocol}. Must be 'tcp' or 'udp'")
+            console.print(f"[dim]Valid formats:[/dim]")
+            console.print("  8000              Container and host both use 8000")
+            console.print("  8080:3000         Host 8080 → container 3000")
+            console.print("  5432/tcp          Explicit protocol")
+            console.print("  8080:3000/udp     Host 8080 → container 3000 via UDP")
+            raise SystemExit(1)
+
+    # Parse host:container mapping
+    try:
+        if ":" in spec:
+            host_str, container_str = spec.split(":", 1)
+            host = int(host_str)
+            container = int(container_str)
+        else:
+            container = int(spec)
+            host = container
+    except ValueError:
+        console.print(f"[red]Invalid port specification:[/red] {spec}")
+        console.print(f"[dim]Valid formats:[/dim]")
+        console.print("  8000              Container and host both use 8000")
+        console.print("  8080:3000         Host 8080 → container 3000")
+        console.print("  5432/tcp          Explicit protocol")
+        console.print("  8080:3000/udp     Host 8080 → container 3000 via UDP")
+        raise SystemExit(1)
+
+    return PortConfig(container=container, host=host, protocol=protocol)
+
+
+def _check_port_conflicts(ports, sandbox_name: str) -> None:
+    """Check if host ports are already in use.
+
+    Raises:
+        SystemExit: If any port is already bound.
+    """
+    from mirustech.devenv_generator.models import PortConfig
+
+    for port_config in ports:
+        host_port = port_config.host_port
+        result = run_command(["lsof", "-i", f":{host_port}"], timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            console.print(f"[red]Port {host_port} already in use[/red]")
+            console.print(f"[dim]Process using port:[/dim]\n{result.stdout}")
+            console.print(f"\n[yellow]Options:[/yellow]")
+            console.print(f"  1. Stop the process using port {host_port}")
+            console.print(f"  2. Use different host port: --expose-port {host_port+1}:{port_config.container}")
+            console.print(f"  3. Disable ports: --no-ports")
+            raise SystemExit(1)
+
+
 def _ensure_docker_running() -> bool:
     """Ensure Docker is running, starting Docker Desktop if needed."""
     try:
@@ -251,9 +317,11 @@ def _run_sandbox(
         if no_cache:
             build_cmd.append("--no-cache")
             console.print("[dim]  (forcing rebuild without cache)[/dim]")
-        build_result = run_command(build_cmd, cwd=sandbox_dir, timeout=600)
+        console.print()  # Add blank line before build output
+        build_result = run_command(build_cmd, cwd=sandbox_dir, timeout=600, stream_output=True)
+        console.print()  # Add blank line after build output
         if build_result.returncode != 0:
-            console.print("[red]Build failed[/red]")
+            console.print("[red]Build failed - check output above for details[/red]")
             raise SystemExit(1)
 
     if detach:
@@ -368,6 +436,18 @@ def _run_sandbox(
     default=False,
     help="Force rebuild without Docker cache",
 )
+@click.option(
+    "--expose-port",
+    "expose_ports",
+    multiple=True,
+    help="Expose additional ports (format: [host:]container[/protocol]). Examples: 8000, 8080:3000, 5432/tcp",
+)
+@click.option(
+    "--no-ports",
+    is_flag=True,
+    default=False,
+    help="Disable all port mappings from profile",
+)
 def run(
     paths: tuple[str, ...],
     profile: str,
@@ -383,6 +463,8 @@ def run(
     serena_port: int | None,
     serena_browser: bool | None,
     no_cache: bool,
+    expose_ports: tuple[str, ...],
+    no_ports: bool,
 ) -> None:
     """Run a sandbox with the specified project paths.
 
@@ -435,6 +517,17 @@ def run(
 
     if python_version:
         config.python.version = python_version
+
+    # Apply port overrides
+    if no_ports:
+        config.ports.ports = []
+    elif expose_ports:
+        runtime_ports = [_parse_port_spec(spec) for spec in expose_ports]
+        config.ports.ports.extend(runtime_ports)
+
+    # Check for port conflicts before starting
+    if config.ports.ports:
+        _check_port_conflicts(config.ports.ports, sandbox_name)
 
     effective_start_serena = start_serena if start_serena is not None else config.mcp.enable_serena
     effective_serena_port = serena_port if serena_port is not None else config.mcp.serena_port
@@ -565,12 +658,14 @@ def attach_sandbox(name: str | None) -> None:
         raise SystemExit(1)
 
     console.print(f"[bold green]Attaching to {name}...[/bold green]")
-    console.print("[dim]Press Ctrl+P, Ctrl+Q to detach[/dim]")
+    console.print("[dim]Exit the shell with 'exit' or Ctrl+D[/dim]")
+    console.print("[dim]Note: If Claude Code exits unexpectedly, type 'claude' to restart[/dim]")
     console.print()
 
+    # Use docker compose exec with interactive TTY
     os.execvp(
         "docker",
-        ["docker", "compose", "-p", name, "exec", "dev", "/bin/zsh"],
+        ["docker", "compose", "-p", name, "exec", "-it", "dev", "/bin/zsh"],
     )
 
 
