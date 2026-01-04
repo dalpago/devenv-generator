@@ -18,7 +18,7 @@ jobs:
           git checkout ${{ github.sha }}
 
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Run linting
         run: uv run ruff check src/ tests/
