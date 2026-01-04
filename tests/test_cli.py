@@ -93,8 +93,9 @@ class TestCompletionsCommand:
         assert result.exit_code != 0
 
 
+@pytest.mark.integration
 class TestCleanCommand:
-    """Tests for the clean command."""
+    """Tests for the clean command (requires Docker)."""
 
     @pytest.fixture
     def runner(self) -> CliRunner:
