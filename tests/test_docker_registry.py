@@ -6,7 +6,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
-from mirustech.devenv_generator.adapters.docker_registry import DockerRegistryClient
+from mirustech.devenv_generator.adapters.docker_registry import (
+    DockerRegistryClient,
+)
 from mirustech.devenv_generator.models import ImageSpec
 from mirustech.devenv_generator.settings import AuthMethod, RegistryConfig
 
@@ -418,3 +420,93 @@ class TestImageExistsLocally:
             mock_run.side_effect = OSError("Error")
             result = client.image_exists_locally(image_spec)
             assert result is False
+
+
+class TestLoginWithPrompt:
+    """Tests for _login_with_prompt method."""
+
+    def test_prompt_login_success(self) -> None:
+        """Test successful login with prompted credentials."""
+        client = DockerRegistryClient()
+
+        with (
+            patch(
+                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
+            ) as mock_prompt,
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_prompt.side_effect = ["testuser", "testpass"]
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = client._login_with_prompt("registry.example.com")
+            assert result is True
+
+    def test_prompt_login_failure(self) -> None:
+        """Test failed login with prompted credentials."""
+        client = DockerRegistryClient()
+
+        with (
+            patch(
+                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
+            ) as mock_prompt,
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_prompt.side_effect = ["testuser", "wrongpass"]
+            mock_run.return_value = MagicMock(
+                returncode=1, stderr="Invalid credentials"
+            )
+
+            result = client._login_with_prompt("registry.example.com")
+            assert result is False
+
+    def test_prompt_login_timeout(self) -> None:
+        """Test timeout during prompted login."""
+        client = DockerRegistryClient()
+
+        with (
+            patch(
+                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
+            ) as mock_prompt,
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_prompt.side_effect = ["testuser", "testpass"]
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="docker", timeout=30)
+
+            result = client._login_with_prompt("registry.example.com")
+            assert result is False
+
+    def test_prompt_login_os_error(self) -> None:
+        """Test OS error during prompted login."""
+        client = DockerRegistryClient()
+
+        with (
+            patch(
+                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
+            ) as mock_prompt,
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_prompt.side_effect = ["testuser", "testpass"]
+            mock_run.side_effect = OSError("Error")
+
+            result = client._login_with_prompt("registry.example.com")
+            assert result is False
+
+
+class TestRegistryClientProtocol:
+    """Tests for the RegistryClient protocol."""
+
+    def test_docker_registry_client_implements_protocol(self) -> None:
+        """DockerRegistryClient should implement RegistryClient protocol."""
+        client = DockerRegistryClient()
+
+        # Check that all protocol methods exist
+        assert hasattr(client, "authenticate")
+        assert hasattr(client, "pull_image")
+        assert hasattr(client, "push_image")
+        assert hasattr(client, "tag_image")
+
+        # Check they are callable
+        assert callable(client.authenticate)
+        assert callable(client.pull_image)
+        assert callable(client.push_image)
+        assert callable(client.tag_image)

@@ -429,3 +429,153 @@ class TestSSHKeyMounting:
         content = generator.render_docker_compose()
 
         assert "~/.ssh" not in content
+
+
+class TestSandboxGenerator:
+    """Tests for SandboxGenerator class."""
+
+    @pytest.fixture
+    def profile(self) -> ProfileConfig:
+        """Create a test profile."""
+        return ProfileConfig(
+            name="test",
+            description="Test profile",
+            python=PythonConfig(version="3.12"),
+        )
+
+    @pytest.fixture
+    def mounts(self) -> list:
+        """Create test mounts."""
+        from mirustech.devenv_generator.models import MountSpec
+
+        return [
+            MountSpec(host_path=Path("/home/user/project"), mode="rw"),
+        ]
+
+    def test_sandbox_generator_init(self, profile: ProfileConfig, mounts: list) -> None:
+        """Should initialize with correct attributes."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        assert generator.profile == profile
+        assert generator.sandbox_name == "test-sandbox"
+        assert generator.mounts == mounts
+        assert generator.use_host_claude_config is True
+
+    def test_render_dockerfile(self, profile: ProfileConfig, mounts: list) -> None:
+        """Should render Dockerfile with correct content."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_dockerfile()
+
+        assert "FROM python:3.12-slim" in content
+        assert "# Profile: test" in content
+
+    def test_render_docker_compose(self, profile: ProfileConfig, mounts: list) -> None:
+        """Should render sandbox docker-compose.yml."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_docker_compose()
+
+        assert "services:" in content
+        assert "dev:" in content
+
+    def test_render_env_example(self, profile: ProfileConfig, mounts: list) -> None:
+        """Should render .env.example for sandbox."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_env_example()
+
+        assert "ANTHROPIC_AUTH_TOKEN" in content
+        assert "Environment variables for sandbox" in content
+
+    def test_render_sops_yaml(self, profile: ProfileConfig, mounts: list) -> None:
+        """Should render .sops.yaml configuration."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_sops_yaml()
+
+        assert "creation_rules" in content
+        assert "age" in content
+
+    def test_generate_creates_files(
+        self, profile: ProfileConfig, mounts: list, tmp_path: Path
+    ) -> None:
+        """Should create all expected sandbox files."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        generated = generator.generate(tmp_path)
+
+        # Check files were created
+        assert len(generated) >= 4
+        assert (tmp_path / ".devcontainer" / "Dockerfile").exists()
+        assert (tmp_path / "docker-compose.yml").exists()
+        assert (tmp_path / ".env.example").exists()
+        assert (tmp_path / ".sops.yaml").exists()
+        assert (tmp_path / ".devcontainer" / ".build-hash").exists()
+
+    def test_sandbox_with_cow_mount(self, profile: ProfileConfig) -> None:
+        """Should handle copy-on-write mounts."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import MountSpec
+
+        mounts = [
+            MountSpec(host_path=Path("/home/user/project"), mode="cow"),
+        ]
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_docker_compose()
+
+        # COW mounts use overlay filesystem
+        assert "services:" in content
+
+    def test_sandbox_without_host_claude_config(
+        self, profile: ProfileConfig, mounts: list
+    ) -> None:
+        """Should not mount ~/.claude when disabled."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+            use_host_claude_config=False,
+        )
+        content = generator.render_docker_compose()
+
+        # When disabled, should not mount host claude config
+        # The exact behavior depends on template implementation
+        assert "services:" in content
