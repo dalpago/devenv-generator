@@ -1,0 +1,23 @@
+# Minimal profile: Fast iteration for profile development
+# Build time <2min (50-80% faster than default profile's 5-10min)
+# Contains only Python essentials (no additional tooling) to minimize layer caching and package installation time
+# Use when: Rapidly testing profile changes, debugging generator logic
+# Do NOT use for: Production work requiring language tooling beyond Python
+
+name: minimal
+description: Minimal profile for fast iteration - Python + essential tools only
+python:
+  version: "3.12"
+  packages: []  # uv available for dependency management, no pre-installed packages
+system_packages:
+  - git
+  - curl
+node_packages: []  # No Node.js installed; web-dev profile provides Node.js if needed
+uvx_tools: []
+github_releases: {}
+mcp:
+  enable_serena: false  # Serena adds ~30s to startup, disabled for speed
+  serena_port: 9121
+  serena_browser: false
+ports:
+  ports: []

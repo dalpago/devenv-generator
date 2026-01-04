@@ -71,7 +71,7 @@ def list_profiles() -> None:
     table.add_column("Python")
 
     # Bundled profiles
-    bundled = ["default"]
+    bundled = ["default", "minimal", "web-dev", "data-science"]
     for profile_name in bundled:
         try:
             profile = get_bundled_profile(profile_name)

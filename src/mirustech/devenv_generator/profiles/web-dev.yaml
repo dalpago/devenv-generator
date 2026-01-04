@@ -1,0 +1,37 @@
+# Web development profile: Node 22 + modern frontend tooling
+# Build time ~3-5min (Node installation + npm packages)
+# Bundles validated web stack (TypeScript, ESLint, Prettier, Vite) to avoid per-project configuration
+# Ports 3000/5173 pre-configured for Vite dev server (common defaults in web ecosystem)
+# Use when: Developing web apps with Vite, React, Vue, Svelte, or similar frameworks
+
+name: web-dev
+description: Web development profile - Node 22 + modern web tooling
+python:
+  version: "3.12"
+  packages: []  # Python available but not primary focus
+system_packages:
+  - git
+  - curl
+  - nodejs  # Node 22 LTS (Active LTS until 2027-04-30, balances stability with modern features)
+node_packages:
+  - "@anthropic-ai/claude-code"
+  - vite
+  - typescript
+  - eslint
+  - prettier
+uvx_tools: []
+github_releases: {}
+mcp:
+  enable_serena: true  # Code intelligence useful for web projects
+  serena_port: 9121
+  serena_browser: false
+ports:
+  ports:
+    - container: 3000
+      host: 3000
+      protocol: tcp
+      description: Vite dev server  # Common Vite default
+    - container: 5173
+      host: 5173
+      protocol: tcp
+      description: Vite (alternative port)  # Vite fallback when 3000 in use

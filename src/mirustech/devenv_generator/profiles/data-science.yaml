@@ -1,0 +1,34 @@
+# Data science profile: Python ML/data analysis stack
+# Build time ~5-7min (ML libraries have native dependencies requiring compilation)
+# Bundles validated ML stack (numpy, pandas, scikit-learn, jupyter, matplotlib, seaborn) to avoid compatibility issues
+# Port 8888 pre-configured for Jupyter notebook server (standard in data science workflows)
+# Use when: Data analysis, machine learning, scientific computing workflows
+
+name: data-science
+description: Data science profile - Python ML stack
+python:
+  version: "3.12"
+  packages:
+    - numpy  # Numerical computing (compiled C extensions)
+    - pandas  # Data manipulation (builds on numpy)
+    - scikit-learn  # Machine learning algorithms
+    - jupyter  # Interactive notebooks
+    - matplotlib  # Plotting library
+    - seaborn  # Statistical visualization (matplotlib wrapper)
+system_packages:
+  - git
+  - curl
+node_packages:
+  - "@anthropic-ai/claude-code"
+uvx_tools: []
+github_releases: {}
+mcp:
+  enable_serena: true  # Serena useful for navigating large data processing codebases
+  serena_port: 9121
+  serena_browser: false
+ports:
+  ports:
+    - container: 8888
+      host: 8888
+      protocol: tcp
+      description: Jupyter notebook server  # Standard Jupyter port
