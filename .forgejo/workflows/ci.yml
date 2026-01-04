@@ -13,7 +13,9 @@ jobs:
       image: ghcr.io/astral-sh/uv:python3.12-bookworm
     steps:
       - name: Checkout
-        uses: https://code.forgejo.org/actions/checkout@v4
+        run: |
+          git clone --depth 1 --branch ${{ github.ref_name }} ${{ github.server_url }}/${{ github.repository }}.git .
+          git checkout ${{ github.sha }}
 
       - name: Install dependencies
         run: uv sync --frozen
