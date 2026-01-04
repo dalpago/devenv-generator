@@ -1,7 +1,6 @@
 """Tests for CLI commands and helper functions."""
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 import pytest
 from click.testing import CliRunner

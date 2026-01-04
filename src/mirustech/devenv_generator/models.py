@@ -96,18 +96,9 @@ class PortConfig(BaseModel):
     """Single port mapping specification."""
 
     container: int = Field(..., description="Port inside container")
-    host: int | None = Field(
-        default=None,
-        description="Port on host (auto-assign if None)"
-    )
-    protocol: Literal["tcp", "udp"] = Field(
-        default="tcp",
-        description="Protocol (tcp or udp)"
-    )
-    description: str = Field(
-        default="",
-        description="Human-readable description of service"
-    )
+    host: int | None = Field(default=None, description="Port on host (auto-assign if None)")
+    protocol: Literal["tcp", "udp"] = Field(default="tcp", description="Protocol (tcp or udp)")
+    description: str = Field(default="", description="Human-readable description of service")
 
     @property
     def host_port(self) -> int:
@@ -118,10 +109,7 @@ class PortConfig(BaseModel):
 class PortsConfig(BaseModel):
     """Port exposure configuration."""
 
-    ports: list[PortConfig] = Field(
-        default_factory=list,
-        description="Port mappings to expose"
-    )
+    ports: list[PortConfig] = Field(default_factory=list, description="Port mappings to expose")
 
     @field_validator("ports")
     @classmethod
@@ -183,7 +171,8 @@ class ProfileConfig(BaseModel):
     )
     environment: dict[str, str] = Field(
         default_factory=dict,
-        description="Additional environment variables to set (CLAUDE_CODE_OAUTH_TOKEN is always included)",
+        description="Additional environment variables to set "
+        "(CLAUDE_CODE_OAUTH_TOKEN is always included)",
     )
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     mounts: MountsConfig = Field(default_factory=MountsConfig)
@@ -193,7 +182,8 @@ class ProfileConfig(BaseModel):
     )
     playwright: bool = Field(
         default=False,
-        description="Install Playwright browser dependencies (Chromium, Firefox, WebKit system libraries)",
+        description="Install Playwright browser dependencies "
+        "(Chromium, Firefox, WebKit system libraries)",
     )
     ports: PortsConfig = Field(
         default_factory=PortsConfig,

@@ -1,5 +1,6 @@
 """Sandbox lifecycle commands (run, attach, stop, start, cd)."""
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -49,12 +50,14 @@ def _detect_python_version(project_path: Path) -> str | None:
     if pyproject_file.exists():
         try:
             import tomllib
+
             with open(pyproject_file, "rb") as f:
                 data = tomllib.load(f)
 
             requires_python = data.get("project", {}).get("requires-python", "")
             if requires_python:
                 import re
+
                 match = re.search(r"(\d+\.\d+)", requires_python)
                 if match:
                     return match.group(1)
@@ -79,7 +82,7 @@ def _load_profile(profile: str) -> ProfileConfig:
     except FileNotFoundError:
         console.print(f"[red]Profile not found:[/red] {profile}")
         console.print("Use 'devenv profiles list' to see available profiles")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
 
 def _parse_port_spec(spec: str):
@@ -99,12 +102,12 @@ def _parse_port_spec(spec: str):
         spec, protocol = spec.rsplit("/", 1)
         if protocol not in ("tcp", "udp"):
             console.print(f"[red]Invalid protocol:[/red] {protocol}. Must be 'tcp' or 'udp'")
-            console.print(f"[dim]Valid formats:[/dim]")
+            console.print("[dim]Valid formats:[/dim]")
             console.print("  8000              Container and host both use 8000")
             console.print("  8080:3000         Host 8080 → container 3000")
             console.print("  5432/tcp          Explicit protocol")
             console.print("  8080:3000/udp     Host 8080 → container 3000 via UDP")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     # Parse host:container mapping
     try:
@@ -117,12 +120,12 @@ def _parse_port_spec(spec: str):
             host = container
     except ValueError:
         console.print(f"[red]Invalid port specification:[/red] {spec}")
-        console.print(f"[dim]Valid formats:[/dim]")
+        console.print("[dim]Valid formats:[/dim]")
         console.print("  8000              Container and host both use 8000")
         console.print("  8080:3000         Host 8080 → container 3000")
         console.print("  5432/tcp          Explicit protocol")
         console.print("  8080:3000/udp     Host 8080 → container 3000 via UDP")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     return PortConfig(container=container, host=host, protocol=protocol)
 
@@ -133,7 +136,6 @@ def _check_port_conflicts(ports, sandbox_name: str) -> None:
     Raises:
         SystemExit: If any port is already bound.
     """
-    from mirustech.devenv_generator.models import PortConfig
 
     for port_config in ports:
         host_port = port_config.host_port
@@ -141,10 +143,13 @@ def _check_port_conflicts(ports, sandbox_name: str) -> None:
         if result.returncode == 0 and result.stdout.strip():
             console.print(f"[red]Port {host_port} already in use[/red]")
             console.print(f"[dim]Process using port:[/dim]\n{result.stdout}")
-            console.print(f"\n[yellow]Options:[/yellow]")
+            console.print("\n[yellow]Options:[/yellow]")
             console.print(f"  1. Stop the process using port {host_port}")
-            console.print(f"  2. Use different host port: --expose-port {host_port+1}:{port_config.container}")
-            console.print(f"  3. Disable ports: --no-ports")
+            alt_port = host_port + 1
+            console.print(
+                f"  2. Use different host port: --expose-port {alt_port}:{port_config.container}"
+            )
+            console.print("  3. Disable ports: --no-ports")
             raise SystemExit(1)
 
 
@@ -158,10 +163,8 @@ def _ensure_docker_running() -> bool:
         pass
 
     console.print("[dim]Starting Docker Desktop...[/dim]")
-    try:
+    with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError):
         run_command(["open", "-a", "Docker"], timeout=5)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
 
     for _ in range(30):
         time.sleep(2)
@@ -201,10 +204,14 @@ def _start_serena_server(port: int = 9121, no_browser: bool = False) -> subproce
         console.print(f"[dim]Starting Serena MCP server on port {port}...[/dim]")
         cmd = [
             "uvx",
-            "--from", "git+https://github.com/oraios/serena",
-            "serena", "start-mcp-server",
-            "--transport", "streamable-http",
-            "--port", str(port),
+            "--from",
+            "git+https://github.com/oraios/serena",
+            "serena",
+            "start-mcp-server",
+            "--transport",
+            "streamable-http",
+            "--port",
+            str(port),
         ]
 
         if no_browser:
@@ -326,7 +333,9 @@ def _run_sandbox(
 
     if detach:
         console.print(f"[dim]Starting {sandbox_name} in background...[/dim]")
-        result = run_command(["docker", "compose", "-p", sandbox_name, "up", "-d"], cwd=sandbox_dir, timeout=300)
+        result = run_command(
+            ["docker", "compose", "-p", sandbox_name, "up", "-d"], cwd=sandbox_dir, timeout=300
+        )
         if result.returncode != 0:
             console.print(f"[red]Failed to start:[/red]\n{result.stderr}")
             raise SystemExit(1)
@@ -440,7 +449,7 @@ def _run_sandbox(
     "--expose-port",
     "expose_ports",
     multiple=True,
-    help="Expose additional ports (format: [host:]container[/protocol]). Examples: 8000, 8080:3000, 5432/tcp",
+    help="Expose additional ports (format: [host:]container[/protocol]).",
 )
 @click.option(
     "--no-ports",
@@ -498,14 +507,11 @@ def run(
         except Exception as e:
             console.print(f"[red]Invalid path:[/red] {path_str}")
             console.print(f"  Error: {e}")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     sandbox_name = name or mount_specs[0].host_path.name
 
-    if output is None:
-        output_path = _get_sandbox_dir(sandbox_name)
-    else:
-        output_path = Path(output).resolve()
+    output_path = _get_sandbox_dir(sandbox_name) if output is None else Path(output).resolve()
 
     if python_version is None:
         detected = _detect_python_version(mount_specs[0].host_path)
@@ -531,7 +537,9 @@ def run(
 
     effective_start_serena = start_serena if start_serena is not None else config.mcp.enable_serena
     effective_serena_port = serena_port if serena_port is not None else config.mcp.serena_port
-    effective_serena_browser = serena_browser if serena_browser is not None else config.mcp.serena_browser
+    effective_serena_browser = (
+        serena_browser if serena_browser is not None else config.mcp.serena_browser
+    )
 
     settings = get_settings()
     image_spec: ImageSpec | None = None
@@ -551,18 +559,14 @@ def run(
     elif build_hash_path.exists():
         stored_hash = build_hash_path.read_text().strip()
         if stored_hash != current_build_hash:
-            console.print(
-                "[yellow]⚠ Build configuration changed - rebuild required[/yellow]"
-            )
+            console.print("[yellow]⚠ Build configuration changed - rebuild required[/yellow]")
             console.print("[dim]Changes detected in profile or templates[/dim]")
             config_changed = True
             auto_no_cache = True
         elif not no_cache:
             console.print("[dim]Build configuration unchanged[/dim]")
     else:
-        console.print(
-            "[yellow]No build hash found - forcing rebuild for safety[/yellow]"
-        )
+        console.print("[yellow]No build hash found - forcing rebuild for safety[/yellow]")
         auto_no_cache = True
         config_changed = True
 

@@ -184,7 +184,7 @@ def completions(shell: str) -> None:
     env_var = "_DEVENV_COMPLETE"
 
     if shell == "bash":
-        script = f'''
+        script = f"""
 _devenv_completion() {{
     local IFS=$'\\n'
     COMPREPLY=( $( env COMP_WORDS="${{COMP_WORDS[*]}}" \\
@@ -194,9 +194,9 @@ _devenv_completion() {{
 }}
 
 complete -F _devenv_completion -o default devenv
-'''
+"""
     elif shell == "zsh":
-        script = '''
+        script = """
 #compdef devenv
 
 _devenv() {
@@ -224,9 +224,9 @@ _devenv() {
 }
 
 compdef _devenv devenv
-'''
+"""
     elif shell == "fish":
-        script = '''
+        script = """
 function __fish_devenv_sandbox_names
     set -l sandboxes_dir "$HOME/.local/share/devenv-sandboxes"
     if test -d "$sandboxes_dir"
@@ -248,7 +248,7 @@ complete -c devenv -n "__fish_use_subcommand" -a "profiles" -d "Manage profiles"
 complete -c devenv -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
 complete -c devenv -n "__fish_seen_subcommand_from attach stop start rm cd" \\
     -a "(__fish_devenv_sandbox_names)"
-'''
+"""
     else:
         console.print(f"[red]Unsupported shell: {shell}[/red]")
         raise SystemExit(1)

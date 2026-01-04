@@ -23,7 +23,9 @@ def profiles() -> None:
 def profiles_help() -> None:
     """Show detailed help about profiles and how to use them."""
     console.print("[bold cyan]What are profiles?[/bold cyan]")
-    console.print("Profiles define the base container environment: Python version, packages, and tools.")
+    console.print(
+        "Profiles define the base container environment: Python version, packages, and tools."
+    )
     console.print()
 
     console.print("[bold cyan]Profile locations:[/bold cyan]")
@@ -110,7 +112,7 @@ def show_profile(name: str) -> None:
             profile = load_profile(profile_path)
         except FileNotFoundError:
             console.print(f"[red]Profile not found:[/red] {name}")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     console.print(f"[bold cyan]{profile.name}[/bold cyan]")
     if profile.description:
@@ -186,14 +188,16 @@ def create_profile(name: str, from_profile: str, output: str | None) -> None:
         console.print(f"[dim]Copying from bundled profile:[/dim] {from_profile}")
     except FileNotFoundError:
         # Try user profile
-        user_profile_path = Path(f"~/.config/devenv-generator/profiles/{from_profile}.yaml").expanduser()
+        user_profile_path = Path(
+            f"~/.config/devenv-generator/profiles/{from_profile}.yaml"
+        ).expanduser()
         if user_profile_path.exists():
             source_profile = load_profile(user_profile_path)
             console.print(f"[dim]Copying from user profile:[/dim] {from_profile}")
         else:
             console.print(f"[red]Source profile not found:[/red] {from_profile}")
             console.print("Use 'devenv profiles list' to see available profiles")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     # Update name and description for the new profile
     source_profile.name = name
@@ -232,7 +236,9 @@ def edit_profile(name: str) -> None:
             # Copy to user directory first
             user_profiles_dir.mkdir(parents=True, exist_ok=True)
             with user_profile_path.open("w") as f:
-                yaml.dump(bundled_profile.model_dump(), f, default_flow_style=False, sort_keys=False)
+                yaml.dump(
+                    bundled_profile.model_dump(), f, default_flow_style=False, sort_keys=False
+                )
             profile_path = user_profile_path
             console.print(f"[yellow]Copied bundled profile to:[/yellow] {user_profile_path}")
             console.print("[dim]You can now edit this local copy[/dim]")
@@ -240,7 +246,7 @@ def edit_profile(name: str) -> None:
             console.print(f"[red]Profile not found:[/red] {name}")
             console.print("Use 'devenv profiles list' to see available profiles")
             console.print(f"Or create a new one with: devenv profiles create {name}")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     # Open in editor
     editor = os.environ.get("VISUAL", os.environ.get("EDITOR", "vi"))
@@ -267,13 +273,14 @@ def profile_path(name: str, exists_only: bool) -> None:
         if exists_only:
             raise SystemExit(0)
         console.print(str(user_profile_path))
-        console.print(f"[dim](user profile)[/dim]")
+        console.print("[dim](user profile)[/dim]")
         return
 
     # Check bundled profiles
     try:
         # Try to get the actual file path from importlib.resources
         from importlib.resources import files
+
         profiles_dir = files("mirustech.devenv_generator").joinpath("profiles")
         bundled_path = profiles_dir.joinpath(f"{name}.yaml")
 
@@ -285,7 +292,7 @@ def profile_path(name: str, exists_only: bool) -> None:
 
         # For bundled profiles, show the package location
         console.print(str(bundled_path))
-        console.print(f"[dim](bundled profile)[/dim]")
+        console.print("[dim](bundled profile)[/dim]")
         return
     except (FileNotFoundError, TypeError, AttributeError):
         pass
@@ -321,16 +328,19 @@ def delete_profile(name: str, force: bool) -> None:
         try:
             _ = get_bundled_profile(name)
             console.print(f"[red]Cannot delete bundled profile:[/red] {name}")
-            console.print("[dim]Bundled profiles are read-only and part of devenv installation[/dim]")
-            raise SystemExit(1)
+            console.print(
+                "[dim]Bundled profiles are read-only and part of devenv installation[/dim]"
+            )
+            raise SystemExit(1) from None
         except FileNotFoundError:
             console.print(f"[red]Profile not found:[/red] {name}")
             console.print("Use 'devenv profiles list' to see available profiles")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     # Confirm deletion
     if not force:
         from rich.prompt import Confirm
+
         console.print(f"[yellow]This will delete:[/yellow] {user_profile_path}")
         if not Confirm.ask("Are you sure?", default=False):
             console.print("[dim]Cancelled[/dim]")

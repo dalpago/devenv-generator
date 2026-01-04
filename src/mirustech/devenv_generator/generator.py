@@ -95,8 +95,6 @@ def get_docker_socket_gid() -> int:
     Returns:
         GID of /var/run/docker.sock, or 999 as fallback.
     """
-    import os
-    import stat
 
     docker_socket = Path("/var/run/docker.sock")
     if docker_socket.exists():
@@ -130,36 +128,36 @@ def get_host_user_ids() -> tuple[int, int]:
 
 def compute_build_hash(profile: ProfileConfig) -> str:
     """Compute a hash representing the build configuration.
-    
+
     This hash includes:
     - Profile configuration (name, packages, system packages, etc.)
     - Dockerfile template content
     - docker-compose template content
-    
+
     If any of these change, the hash will be different and a rebuild is needed.
-    
+
     Args:
         profile: Profile configuration to hash.
-        
+
     Returns:
         MD5 hash hex string.
     """
     hasher = hashlib.md5()
-    
+
     # Hash the profile data (serialize to JSON for deterministic ordering)
     profile_dict = profile.model_dump(mode="json")
     profile_json = json.dumps(profile_dict, sort_keys=True)
     hasher.update(profile_json.encode("utf-8"))
-    
+
     # Hash the Dockerfile template content
     templates_dir = files("mirustech.devenv_generator").joinpath("templates")
     dockerfile_template = templates_dir.joinpath("Dockerfile.j2").read_text()
     hasher.update(dockerfile_template.encode("utf-8"))
-    
+
     # Hash the docker-compose template content
     compose_template = templates_dir.joinpath("docker-compose.sandbox.yml.j2").read_text()
     hasher.update(compose_template.encode("utf-8"))
-    
+
     return hasher.hexdigest()
 
 
@@ -209,7 +207,8 @@ class DevEnvGenerator:
         if self.profile.ports.ports and self.profile.network.mode == "none":
             logger.warning(
                 "ports_with_network_none",
-                message="Port mappings configured but network mode is 'none' - ports will not be accessible"
+                message="Port mappings configured but network mode is 'none' - "
+                "ports will not be accessible",
             )
 
         template = self.env.get_template("docker-compose.yml.j2")
@@ -301,7 +300,10 @@ creation_rules:
         """
         # .env is safe to commit when SOPS-encrypted
         # .env.example is the template (not encrypted)
-        return "# devenv - unencrypted secrets (should not exist if following workflow)\n.env.unencrypted\n"
+        return (
+            "# devenv - unencrypted secrets (should not exist if following workflow)\n"
+            ".env.unencrypted\n"
+        )
 
     def _detect_age_public_key(self) -> str | None:
         """Try to detect the user's age public key.
@@ -456,7 +458,8 @@ class SandboxGenerator:
         if self.profile.ports.ports and self.profile.network.mode == "none":
             logger.warning(
                 "ports_with_network_none",
-                message="Port mappings configured but network mode is 'none' - ports will not be accessible"
+                message="Port mappings configured but network mode is 'none' - "
+                "ports will not be accessible",
             )
 
         template = self.env.get_template("docker-compose.sandbox.yml.j2")
@@ -525,9 +528,7 @@ class SandboxGenerator:
                         line = line.strip()
                         if line.startswith("# public key:"):
                             return line.split(":", 1)[1].strip()
-                        if line.startswith("age1") and not line.startswith(
-                            "AGE-SECRET-KEY"
-                        ):
+                        if line.startswith("age1") and not line.startswith("AGE-SECRET-KEY"):
                             return line
                 except OSError:
                     continue

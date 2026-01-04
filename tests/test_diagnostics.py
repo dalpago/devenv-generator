@@ -1,7 +1,5 @@
 """Tests for diagnostic registry functionality."""
 
-import pytest
-
 from mirustech.devenv_generator.commands.diagnostics import DiagnosticRegistry
 
 

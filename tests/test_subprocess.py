@@ -3,8 +3,6 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from mirustech.devenv_generator.utils.subprocess import run_command
 
 

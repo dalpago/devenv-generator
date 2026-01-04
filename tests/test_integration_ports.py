@@ -7,18 +7,12 @@ Note: These are end-to-end tests that actually start Docker containers.
 They may be skipped in CI or when Docker is not available.
 """
 
-import json
 import random
 import subprocess
-import time
 from pathlib import Path
 
 import pytest
 import yaml
-from click.testing import CliRunner
-
-from mirustech.devenv_generator.cli import main
-from mirustech.devenv_generator.models import PortConfig, PortsConfig, ProfileConfig
 
 
 def _get_random_port() -> int:
@@ -30,11 +24,7 @@ def _get_random_port() -> int:
 def docker_available():
     """Check Docker availability, skip tests if not available."""
     try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=5
-        )
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
         if result.returncode == 0:
             return True
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -59,7 +49,7 @@ def test_profile_with_ports(tmp_path: Path) -> Path:
                 {"container": port1, "host": port1, "description": "Test server"},
                 {"container": port2, "host": port2, "description": "Vite dev"},
             ]
-        }
+        },
     }
     profile_path.write_text(yaml.dump(profile_data))
     return profile_path
@@ -82,10 +72,7 @@ class TestStaticPortExposure:
         assert 49152 <= config.ports.ports[1].container <= 65535
 
     def test_docker_compose_generated_with_ports(
-        self,
-        test_profile_with_ports: Path,
-        tmp_path: Path,
-        docker_available
+        self, test_profile_with_ports: Path, tmp_path: Path, docker_available
     ) -> None:
         """Generated docker-compose includes port mappings."""
         from mirustech.devenv_generator.generator import DevEnvGenerator, load_profile

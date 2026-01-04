@@ -10,7 +10,6 @@ Run with: pytest -m integration
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 import uuid
@@ -109,11 +108,11 @@ def add(a: int, b: int) -> int:
 
     # Create a minimal pyproject.toml
     pyproject = project_dir / "pyproject.toml"
-    pyproject.write_text('''[project]
+    pyproject.write_text("""[project]
 name = "test-project"
 version = "0.1.0"
 requires-python = ">=3.12"
-''')
+""")
 
     return project_dir
 
@@ -289,9 +288,13 @@ class TestSandboxIntegration:
             # Run Claude Code non-interactively (uses mounted ~/.claude for auth)
             result = subprocess.run(
                 [
-                    "docker", "compose",
-                    "-p", unique_project_name,
-                    "run", "--rm", "-T",
+                    "docker",
+                    "compose",
+                    "-p",
+                    unique_project_name,
+                    "run",
+                    "--rm",
+                    "-T",
                     "dev",
                     "claude",
                     "--print",

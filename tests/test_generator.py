@@ -131,10 +131,12 @@ class TestDevEnvGenerator:
         profile = ProfileConfig(
             name="test",
             python=PythonConfig(version="3.12"),
-            ports=PortsConfig(ports=[
-                PortConfig(container=8000, host=8000, description="API server"),
-                PortConfig(container=5173, host=5173, description="Vite"),
-            ])
+            ports=PortsConfig(
+                ports=[
+                    PortConfig(container=8000, host=8000, description="API server"),
+                    PortConfig(container=5173, host=5173, description="Vite"),
+                ]
+            ),
         )
         generator = DevEnvGenerator(profile, project_name="test")
         content = generator.render_docker_compose()
@@ -152,9 +154,11 @@ class TestDevEnvGenerator:
         profile = ProfileConfig(
             name="test",
             python=PythonConfig(version="3.12"),
-            ports=PortsConfig(ports=[
-                PortConfig(container=5432, host=5432, protocol="udp"),
-            ])
+            ports=PortsConfig(
+                ports=[
+                    PortConfig(container=5432, host=5432, protocol="udp"),
+                ]
+            ),
         )
         generator = DevEnvGenerator(profile, project_name="test")
         content = generator.render_docker_compose()
@@ -168,7 +172,7 @@ class TestDevEnvGenerator:
         content = generator.render_docker_compose()
 
         # Should not have ports section when no ports configured
-        lines = content.split('\n')
+        lines = content.split("\n")
         assert not any(line.strip() == "ports:" for line in lines)
 
     def test_render_docker_compose_network_none_warning(self, capsys) -> None:
@@ -179,9 +183,11 @@ class TestDevEnvGenerator:
             name="test",
             python=PythonConfig(version="3.12"),
             network=NetworkConfig(mode="none"),
-            ports=PortsConfig(ports=[
-                PortConfig(container=8000, host=8000),
-            ])
+            ports=PortsConfig(
+                ports=[
+                    PortConfig(container=8000, host=8000),
+                ]
+            ),
         )
         generator = DevEnvGenerator(profile, project_name="test")
 

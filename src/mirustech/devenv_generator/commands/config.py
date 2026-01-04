@@ -1,7 +1,6 @@
 """Global configuration commands."""
 
 import os
-from pathlib import Path
 
 import rich_click as click
 from rich.console import Console
@@ -105,7 +104,12 @@ def set_registry() -> None:
         lines.append(f"DEVENV_REGISTRY__PASSWORD={password}")
         console.print()
         console.print("[yellow]Warning: Password stored in plaintext.[/yellow]")
-        console.print("[dim]Consider encrypting with SOPS: sops encrypt --in-place ~/.config/devenv-generator/config.env[/dim]")
+        console.print(
+            "[dim]Consider encrypting with SOPS:[/dim]"
+        )
+        console.print(
+            "[dim]  sops encrypt --in-place ~/.config/devenv-generator/config.env[/dim]"
+        )
 
     config_path.write_text("\n".join(lines) + "\n")
 

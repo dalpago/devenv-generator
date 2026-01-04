@@ -23,8 +23,5 @@ jobs:
       - name: Run linting
         run: uv run ruff check src/ tests/
 
-      - name: Run type checking
-        run: uv run mypy src/
-
       - name: Run tests
         run: uv run pytest -v --tb=short

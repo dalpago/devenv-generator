@@ -19,14 +19,12 @@ import shutil
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import rich_click as click
 import structlog
 from rich.console import Console
-from rich.prompt import Confirm
-from rich.table import Table
 
 from mirustech.devenv_generator.generator import get_bundled_profile
 from mirustech.devenv_generator.settings import get_settings
@@ -54,7 +52,9 @@ class DiagnosticRegistry:
         self._checks: dict[str, Callable[[], tuple[bool, str]]] = {}
         self._fixes: dict[str, Callable[[], tuple[bool, str]]] = {}
 
-    def check(self, name: str) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[], tuple[bool, str]]]:
+    def check(
+        self, name: str
+    ) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[], tuple[bool, str]]]:
         """Decorator to register a check function.
 
         Args:
@@ -68,12 +68,16 @@ class DiagnosticRegistry:
             def check_docker_installed() -> tuple[bool, str]:
                 # Returns (True, "Docker 20.10.7") or (False, "Not found")
         """
+
         def decorator(func: Callable[[], tuple[bool, str]]) -> Callable[[], tuple[bool, str]]:
             self._checks[name] = func
             return func
+
         return decorator
 
-    def fix(self, name: str) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[], tuple[bool, str]]]:
+    def fix(
+        self, name: str
+    ) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[], tuple[bool, str]]]:
         """Decorator to register a fix function.
 
         Args:
@@ -87,9 +91,11 @@ class DiagnosticRegistry:
             def fix_docker_running() -> tuple[bool, str]:
                 # Returns (True, "Started Docker") or (False, "Failed to start")
         """
+
         def decorator(func: Callable[[], tuple[bool, str]]) -> Callable[[], tuple[bool, str]]:
             self._fixes[name] = func
             return func
+
         return decorator
 
     def run_all_checks(self) -> list[tuple[str, bool, str]]:
@@ -108,7 +114,7 @@ class DiagnosticRegistry:
                 results.append((name, success, message))
             except Exception as e:
                 logger.error("diagnostic_check_exception", name=name, error=str(e))
-                results.append((name, False, f"Check failed with error: {str(e)}"))
+                results.append((name, False, f"Check failed with error: {e!s}"))
         return results
 
     def run_all_fixes(self) -> list[tuple[str, bool, str]]:
@@ -127,7 +133,7 @@ class DiagnosticRegistry:
                 results.append((name, success, message))
             except Exception as e:
                 logger.error("diagnostic_fix_exception", name=name, error=str(e))
-                results.append((name, False, f"Fix failed with error: {str(e)}"))
+                results.append((name, False, f"Fix failed with error: {e!s}"))
         return results
 
 
@@ -177,7 +183,7 @@ def check_disk_space() -> tuple[bool, str]:
         sandboxes_dir.mkdir(parents=True, exist_ok=True)
 
     stat = os.statvfs(sandboxes_dir)
-    available_gb = (stat.f_bavail * stat.f_frsize) / (1024 ** 3)
+    available_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
 
     if available_gb < 1:
         return False, f"Low disk space: {available_gb:.1f}GB available (recommend 5GB+)"
@@ -315,8 +321,14 @@ def check_container_health() -> tuple[bool, str]:
 
     try:
         result = run_command(
-            ["docker", "exec", container_name, "sh", "-c",
-             "which claude >/dev/null 2>&1 && which happy >/dev/null 2>&1 && python --version"]
+            [
+                "docker",
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "which claude >/dev/null 2>&1 && which happy >/dev/null 2>&1 && python --version",
+            ]
         )
 
         if result.returncode == 0:
@@ -346,6 +358,7 @@ def check_mcp_servers() -> tuple[bool, str]:
 
     try:
         import json
+
         with open(claude_json) as f:
             data = json.load(f)
 
@@ -442,12 +455,12 @@ def fix_happy_dir() -> tuple[bool, str]:
 @diagnostic.fix("disk_space")
 def fix_disk_space() -> tuple[bool, str]:
     """Attempt to free up disk space by cleaning unused images."""
-    from mirustech.devenv_generator.commands.management import _list_sandboxes, _is_sandbox_running
+    from mirustech.devenv_generator.commands.management import _is_sandbox_running, _list_sandboxes
 
     console.print("[dim]Running cleanup to free disk space...[/dim]")
 
     sandboxes = _list_sandboxes()
-    stopped_sandboxes = [n for n, _, running in sandboxes if not running]
+    [n for n, _, running in sandboxes if not running]
 
     result = run_command(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
     devenv_images = []
@@ -489,15 +502,9 @@ def fix_claude_auth() -> tuple[bool, str]:
 
 
 @click.command("doctor")
-@click.option(
-    "--fix", is_flag=True, help="Attempt to fix issues automatically"
-)
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Show detailed information"
-)
-@click.option(
-    "--container", is_flag=True, help="Include container health checks"
-)
+@click.option("--fix", is_flag=True, help="Attempt to fix issues automatically")
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed information")
+@click.option("--container", is_flag=True, help="Include container health checks")
 def doctor(fix: bool, verbose: bool, container: bool) -> None:
     """Run system diagnostics and optionally fix issues.
 
@@ -512,19 +519,21 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
 
     critical_passed = True
     warnings: list[tuple[str, str]] = []
-    failed_checks: list[tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]], str]] = []
+    failed_checks: list[
+        tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]], str]
+    ] = []
 
-    checks: list[tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]] | None]] = [
+    checks: list[
+        tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]] | None]
+    ] = [
         ("critical", "Docker installed", check_docker_installed, None),
         ("critical", "Docker running", check_docker_running, fix_docker_running),
         ("critical", "Docker socket", check_docker_socket, None),
         ("critical", "Docker Compose", check_docker_compose, None),
         ("critical", "Claude authentication", check_claude_auth, fix_claude_auth),
-
         ("warning", "~/.claude directory", check_claude_dir, fix_claude_dir),
         ("warning", "Disk space", check_disk_space, fix_disk_space),
         ("warning", "Default profile valid", check_profile_valid, None),
-
         ("info", "npm installed", check_npm_installed, None),
         ("info", "Git installed", check_git_installed, None),
         ("info", "Happy Coder config", check_happy_config, fix_happy_dir),
@@ -574,13 +583,13 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
         console.print("[bold]Attempting to fix issues...[/bold]\n")
 
         fixes_applied = 0
-        for severity, name, check_fn, fix_fn, original_message in failed_checks:
+        for severity, name, check_fn, fix_fn, _original_message in failed_checks:
             console.print(f"[dim]Fixing {name}...[/dim]")
             try:
                 success, fix_message = fix_fn()
 
                 if success:
-                    passed, verify_message = check_fn()
+                    passed, _verify_message = check_fn()
                     if passed:
                         console.print(f"[green]✓[/green] {name}: {fix_message}")
                         fixes_applied += 1
@@ -589,12 +598,12 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
 
                         if severity == "critical":
                             critical_passed = all(
-                                check_fn()[0]
-                                for sev, _, check_fn, _ in checks
-                                if sev == "critical"
+                                check_fn()[0] for sev, _, check_fn, _ in checks if sev == "critical"
                             )
                     else:
-                        console.print(f"[yellow]⚠[/yellow] {name}: {fix_message} (but check still fails)")
+                        console.print(
+                            f"[yellow]⚠[/yellow] {name}: {fix_message} (but check still fails)"
+                        )
                 else:
                     console.print(f"[red]✗[/red] {name}: {fix_message}")
             except Exception as e:
@@ -616,7 +625,9 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
         console.print("[bold red]✗ Critical issues detected[/bold red]")
         console.print("Please fix the issues above before using devenv.")
         if not fix:
-            console.print("\n[dim]Hint: Try running with --fix to automatically fix some issues[/dim]")
+            console.print(
+                "\n[dim]Hint: Try running with --fix to automatically fix some issues[/dim]"
+            )
         raise SystemExit(1)
 
     if verbose:

@@ -1,5 +1,6 @@
 """Sandbox management commands (status, rm, clean)."""
 
+import contextlib
 import shutil
 import time
 from pathlib import Path
@@ -52,10 +53,8 @@ def _get_dir_size(path: Path) -> int:
     total = 0
     for entry in path.rglob("*"):
         if entry.is_file():
-            try:
+            with contextlib.suppress(OSError):
                 total += entry.stat().st_size
-            except OSError:
-                pass
     return total
 
 
@@ -161,18 +160,12 @@ def remove_sandbox(name: str | None, force: bool) -> None:
 
 
 @click.command("clean")
-@click.option(
-    "--stopped", "-s", is_flag=True, help="Remove stopped sandboxes"
-)
-@click.option(
-    "--images", "-i", is_flag=True, help="Remove unused devenv images"
-)
+@click.option("--stopped", "-s", is_flag=True, help="Remove stopped sandboxes")
+@click.option("--images", "-i", is_flag=True, help="Remove unused devenv images")
 @click.option(
     "--all", "-a", "all_", is_flag=True, help="Remove everything (stopped sandboxes + images)"
 )
-@click.option(
-    "--dry-run", "-n", is_flag=True, help="Show what would be removed without removing"
-)
+@click.option("--dry-run", "-n", is_flag=True, help="Show what would be removed without removing")
 def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     """Clean up unused sandboxes and images.
 
@@ -199,7 +192,9 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     stopped_sandboxes = [(n, p) for n, p, running in sandboxes if not running]
 
     # Get devenv images
-    result = run_command(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.ID}}"])
+    result = run_command(
+        ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.ID}}"]
+    )
     devenv_images: list[tuple[str, str, str]] = []
     if result.returncode == 0:
         for line in result.stdout.strip().split("\n"):
@@ -217,7 +212,9 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     ]
 
     # Get dangling images
-    dangling_result = run_command(["docker", "images", "-f", "dangling=true", "--format", "{{.ID}}\t{{.Size}}"])
+    dangling_result = run_command(
+        ["docker", "images", "-f", "dangling=true", "--format", "{{.ID}}\t{{.Size}}"]
+    )
     dangling_images: list[tuple[str, str]] = []
     if dangling_result.returncode == 0:
         for line in dangling_result.stdout.strip().split("\n"):
@@ -269,7 +266,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     if images:
         if unused_images:
             console.print("[bold]Removing unused devenv images...[/bold]")
-            for name, size, id_ in unused_images:
+            for name, size, _id in unused_images:
                 if dry_run:
                     console.print(f"  [dim]Would remove:[/dim] {name} ({size})")
                 else:

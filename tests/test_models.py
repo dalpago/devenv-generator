@@ -147,9 +147,7 @@ class TestProfileConfig:
         """Ports can be loaded from dictionary."""
         config = ProfileConfig(
             name="test",
-            ports=PortsConfig(ports=[
-                PortConfig(container=8000, host=8000, description="API")
-            ])
+            ports=PortsConfig(ports=[PortConfig(container=8000, host=8000, description="API")]),
         )
         assert len(config.ports.ports) == 1
         assert config.ports.ports[0].description == "API"
@@ -208,41 +206,47 @@ class TestPortsConfig:
 
     def test_single_port(self) -> None:
         """Can configure single port."""
-        config = PortsConfig(ports=[
-            PortConfig(container=8000, host=8000)
-        ])
+        config = PortsConfig(ports=[PortConfig(container=8000, host=8000)])
         assert len(config.ports) == 1
         assert config.ports[0].container == 8000
 
     def test_multiple_ports(self) -> None:
         """Can configure multiple ports."""
-        config = PortsConfig(ports=[
-            PortConfig(container=8000, host=8000),
-            PortConfig(container=5173, host=5173),
-            PortConfig(container=3000, host=3000),
-        ])
+        config = PortsConfig(
+            ports=[
+                PortConfig(container=8000, host=8000),
+                PortConfig(container=5173, host=5173),
+                PortConfig(container=3000, host=3000),
+            ]
+        )
         assert len(config.ports) == 3
 
     def test_duplicate_host_ports_rejected(self) -> None:
         """Duplicate host ports are rejected."""
         with pytest.raises(ValueError, match="Duplicate host ports"):
-            PortsConfig(ports=[
-                PortConfig(container=8000, host=8080),
-                PortConfig(container=3000, host=8080),  # Duplicate host port
-            ])
+            PortsConfig(
+                ports=[
+                    PortConfig(container=8000, host=8080),
+                    PortConfig(container=3000, host=8080),  # Duplicate host port
+                ]
+            )
 
     def test_duplicate_container_ports_allowed(self) -> None:
         """Duplicate container ports are allowed (different hosts)."""
-        config = PortsConfig(ports=[
-            PortConfig(container=8000, host=8080),
-            PortConfig(container=8000, host=9080),  # Same container, different host
-        ])
+        config = PortsConfig(
+            ports=[
+                PortConfig(container=8000, host=8080),
+                PortConfig(container=8000, host=9080),  # Same container, different host
+            ]
+        )
         assert len(config.ports) == 2
 
     def test_auto_assigned_host_ports_unique(self) -> None:
         """Auto-assigned host ports don't conflict."""
-        config = PortsConfig(ports=[
-            PortConfig(container=8000),  # Auto: host=8000
-            PortConfig(container=5173),  # Auto: host=5173
-        ])
+        config = PortsConfig(
+            ports=[
+                PortConfig(container=8000),  # Auto: host=8000
+                PortConfig(container=5173),  # Auto: host=5173
+            ]
+        )
         assert len(config.ports) == 2

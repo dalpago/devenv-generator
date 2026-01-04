@@ -39,7 +39,9 @@ def _save_dynamic_ports(sandbox_dir: Path, ports: dict[str, dict]) -> None:
     ports_file.write_text(json.dumps(ports, indent=2))
 
 
-def _update_compose_ports(sandbox_dir: Path, sandbox_name: str, new_ports: list[PortConfig]) -> None:
+def _update_compose_ports(
+    sandbox_dir: Path, sandbox_name: str, new_ports: list[PortConfig]
+) -> None:
     """Update docker-compose.yml with new port mappings and recreate container.
 
     This modifies the docker-compose.yml file to add new port mappings,
@@ -68,11 +70,11 @@ def _update_compose_ports(sandbox_dir: Path, sandbox_name: str, new_ports: list[
         yaml.dump(compose_config, f, default_flow_style=False, sort_keys=False)
 
     # Recreate container with new ports
-    console.print(f"[dim]Updating container with new port mappings...[/dim]")
+    console.print("[dim]Updating container with new port mappings...[/dim]")
     result = run_command(
         ["docker", "compose", "-p", sandbox_name, "up", "-d", "--force-recreate"],
         cwd=sandbox_dir,
-        timeout=60
+        timeout=60,
     )
 
     if result.returncode != 0:
@@ -112,7 +114,11 @@ def expose_port(port_specs: tuple[str, ...], name: str | None) -> None:
         raise SystemExit(1)
 
     # Parse port specifications
-    from mirustech.devenv_generator.commands.lifecycle import _parse_port_spec, _check_port_conflicts
+    from mirustech.devenv_generator.commands.lifecycle import (
+        _check_port_conflicts,
+        _parse_port_spec,
+    )
+
     new_ports = [_parse_port_spec(spec) for spec in port_specs]
 
     # Check for port conflicts
@@ -128,7 +134,7 @@ def expose_port(port_specs: tuple[str, ...], name: str | None) -> None:
             "host_port": port.host_port,
             "protocol": port.protocol,
             "exposed_at": datetime.now().isoformat(),
-            "method": "docker-port"
+            "method": "docker-port",
         }
     _save_dynamic_ports(sandbox_dir, dynamic_ports)
 
@@ -160,12 +166,11 @@ def list_ports(name: str | None) -> None:
 
     # Get ports from docker inspect
     result = run_command(
-        ["docker", "compose", "-p", name, "ps", "--format", "json"],
-        cwd=sandbox_dir
+        ["docker", "compose", "-p", name, "ps", "--format", "json"], cwd=sandbox_dir
     )
 
     if result.returncode != 0:
-        console.print(f"[yellow]Sandbox not running[/yellow]")
+        console.print("[yellow]Sandbox not running[/yellow]")
         return
 
     containers_json = result.stdout.strip()
@@ -176,7 +181,7 @@ def list_ports(name: str | None) -> None:
     # Parse container info
     try:
         # Handle both single container (dict) and multiple containers (list)
-        if containers_json.startswith('['):
+        if containers_json.startswith("["):
             containers = json.loads(containers_json)
         else:
             containers = [json.loads(containers_json)]
@@ -196,7 +201,7 @@ def list_ports(name: str | None) -> None:
 
     # Extract port mappings
     for container in containers:
-        if "Publishers" in container and container["Publishers"]:
+        if container.get("Publishers"):
             for publisher in container["Publishers"]:
                 container_port = publisher.get("TargetPort")
                 host_port = publisher.get("PublishedPort")
@@ -204,12 +209,7 @@ def list_ports(name: str | None) -> None:
 
                 if container_port and host_port:
                     port_type = "dynamic" if str(container_port) in dynamic_ports else "static"
-                    table.add_row(
-                        str(host_port),
-                        str(container_port),
-                        protocol,
-                        port_type
-                    )
+                    table.add_row(str(host_port), str(container_port), protocol, port_type)
 
     if table.row_count == 0:
         console.print(f"[dim]No ports exposed for {name}[/dim]")
@@ -247,7 +247,8 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
     # Check if ports are dynamic
     not_dynamic = [p for p in container_ports if str(p) not in dynamic_ports]
     if not_dynamic:
-        console.print(f"[yellow]These ports are not dynamically exposed:[/yellow] {', '.join(map(str, not_dynamic))}")
+        ports_list = ", ".join(map(str, not_dynamic))
+        console.print(f"[yellow]These ports are not dynamically exposed:[/yellow] {ports_list}")
         console.print("[dim]Only ports added with 'devenv expose' can be removed[/dim]")
         raise SystemExit(1)
 
@@ -286,11 +287,11 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
 
     # Recreate container if running
     if _is_sandbox_running(name, sandbox_dir):
-        console.print(f"[dim]Updating container...[/dim]")
+        console.print("[dim]Updating container...[/dim]")
         result = run_command(
             ["docker", "compose", "-p", name, "up", "-d", "--force-recreate"],
             cwd=sandbox_dir,
-            timeout=60
+            timeout=60,
         )
 
         if result.returncode != 0:
@@ -303,4 +304,6 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
             del dynamic_ports[str(port)]
     _save_dynamic_ports(sandbox_dir, dynamic_ports)
 
-    console.print(f"[bold green]✓ Ports removed:[/bold green] {', '.join(map(str, container_ports))}")
+    console.print(
+        f"[bold green]✓ Ports removed:[/bold green] {', '.join(map(str, container_ports))}"
+    )

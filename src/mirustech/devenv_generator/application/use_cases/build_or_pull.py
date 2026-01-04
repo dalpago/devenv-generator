@@ -101,19 +101,13 @@ class BuildOrPullImageUseCase:
                 registry=registry_config.url,
                 fallback="building_locally",
             )
-            console.print(
-                f"[yellow]Registry auth failed, building locally...[/yellow]"
-            )
-            return self._build_locally(
-                image_spec, sandbox_dir, sandbox_name, auto_push=False
-            )
+            console.print("[yellow]Registry auth failed, building locally...[/yellow]")
+            return self._build_locally(image_spec, sandbox_dir, sandbox_name, auto_push=False)
 
         # Try to pull
         console.print(f"[dim]Pulling from registry: {image_spec.full_name}[/dim]")
         if self.registry_client.pull_image(image_spec):
-            console.print(
-                f"[green]✓ Using cached image:[/green] {image_spec.full_name}"
-            )
+            console.print(f"[green]✓ Using cached image:[/green] {image_spec.full_name}")
             return BuildOrPullResult(
                 image_spec=image_spec,
                 pulled=True,
@@ -217,9 +211,7 @@ class BuildOrPullImageUseCase:
                 if self.registry_client.push_image(latest_spec):
                     console.print(f"[green]✓ Pushed {latest_spec.full_name}[/green]")
             else:
-                console.print(
-                    "[yellow]Push failed, continuing with local image[/yellow]"
-                )
+                console.print("[yellow]Push failed, continuing with local image[/yellow]")
 
         return BuildOrPullResult(
             image_spec=image_spec,
