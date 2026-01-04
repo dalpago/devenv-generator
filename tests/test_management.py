@@ -254,3 +254,168 @@ class TestCleanCommand:
             result = runner.invoke(main, ["clean"])
             assert result.exit_code == 0
             assert "Available for cleanup" in result.output
+
+    def test_clean_stopped_dry_run(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Should show what would be removed with --dry-run."""
+        # Create a stopped sandbox
+        sandbox_dir = tmp_path / "test-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=False,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management.run_command"
+            ) as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="")
+            result = runner.invoke(main, ["clean", "--stopped", "--dry-run"])
+            assert result.exit_code == 0
+            assert "Would remove" in result.output or "Dry run" in result.output
+
+    def test_clean_stopped_removes_sandboxes(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Should remove stopped sandboxes."""
+        # Create a stopped sandbox
+        sandbox_dir = tmp_path / "test-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=False,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management.run_command"
+            ) as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="")
+            result = runner.invoke(main, ["clean", "--stopped"])
+            assert result.exit_code == 0
+            assert not sandbox_dir.exists()
+
+
+class TestStatusCommandWithSandboxes:
+    """Tests for status command with actual sandboxes."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_status_with_sandboxes(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Should list sandboxes when they exist."""
+        # Create a sandbox
+        sandbox_dir = tmp_path / "my-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=False,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._get_image_size",
+                return_value=None,
+            ),
+        ):
+            result = runner.invoke(main, ["status"])
+            assert result.exit_code == 0
+            assert "my-sandbox" in result.output
+            assert "Sandboxes" in result.output
+
+
+class TestRemoveCommandExtended:
+    """Extended tests for rm command."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_rm_running_sandbox_without_force(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Should fail to remove running sandbox without --force."""
+        sandbox_dir = tmp_path / "running-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=True,
+            ),
+        ):
+            result = runner.invoke(main, ["rm", "running-sandbox"])
+            assert result.exit_code == 1
+            assert "running" in result.output.lower()
+
+    def test_rm_running_sandbox_with_force(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """Should remove running sandbox with --force."""
+        sandbox_dir = tmp_path / "running-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=True,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management.run_command"
+            ) as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            result = runner.invoke(main, ["rm", "running-sandbox", "--force"])
+            assert result.exit_code == 0
+            assert not sandbox_dir.exists()
+
+    def test_rm_stopped_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Should remove stopped sandbox."""
+        sandbox_dir = tmp_path / "stopped-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=False,
+            ),
+        ):
+            result = runner.invoke(main, ["rm", "stopped-sandbox"])
+            assert result.exit_code == 0
+            assert "Removed" in result.output
+            assert not sandbox_dir.exists()
