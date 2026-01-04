@@ -28,7 +28,7 @@ from rich.console import Console
 
 from mirustech.devenv_generator.generator import get_bundled_profile
 from mirustech.devenv_generator.settings import get_settings
-from mirustech.devenv_generator.utils.subprocess import run_command
+from mirustech.devenv_generator.utils.subprocess import run_command, wait_with_exponential_backoff
 
 console = Console()
 logger = structlog.get_logger()
@@ -143,6 +143,8 @@ diagnostic = DiagnosticRegistry()
 @diagnostic.check("docker_installed")
 def check_docker_installed() -> tuple[bool, str]:
     """Check if Docker is installed."""
+    import subprocess
+
     result = run_command(["docker", "--version"])
     if result.returncode == 0:
         version = result.stdout.strip()
@@ -402,6 +404,7 @@ def _check_port_available(port: int, name: str) -> tuple[bool, str]:
 def fix_docker_running() -> tuple[bool, str]:
     """Try to start Docker if it's not running."""
     import platform
+    import subprocess
 
     system = platform.system()
 
@@ -410,12 +413,17 @@ def fix_docker_running() -> tuple[bool, str]:
         result = run_command(["open", "-a", "Docker"])
         if result.returncode == 0:
             console.print("[dim]Waiting for Docker to start (this may take a minute)...[/dim]")
-            for _ in range(30):
-                time.sleep(2)
-                check = run_command(["docker", "info"])
-                if check.returncode == 0:
-                    return True, "Docker Desktop started successfully"
-            return False, "Docker Desktop launched but didn't start in time"
+
+            # 40s timeout: diagnostic auto-fix provides faster feedback than lifecycle commands (60s)
+            # Exponential backoff (1s, 2s, 4s, 8s, 16s, 16s): ~8-10 retry attempts within 40s window
+            success = wait_with_exponential_backoff(
+                check_fn=lambda: subprocess.run(
+                    ["docker", "info"], capture_output=True, timeout=10
+                ).returncode == 0,
+                max_wait=40,
+                max_delay=16,
+            )
+            return (True, "Docker started successfully") if success else (False, "Docker failed to start within timeout")
         else:
             return False, "Failed to launch Docker Desktop"
     elif system == "Linux":

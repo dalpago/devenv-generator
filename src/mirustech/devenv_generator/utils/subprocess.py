@@ -6,7 +6,8 @@ observable via structlog without requiring each call site to add logging.
 """
 
 import subprocess
-from typing import Any
+import time
+from typing import Any, Callable
 
 import structlog
 
@@ -45,3 +46,61 @@ def run_command(
 
     # Default: capture output for programmatic use
     return subprocess.run(cmd, capture_output=True, text=text, timeout=timeout, **kwargs)
+
+
+def wait_with_exponential_backoff(
+    check_fn: Callable[[], bool],
+    max_wait: int = 60,
+    initial_delay: int = 1,
+    max_delay: int = 16,
+) -> bool:
+    """Poll check_fn with exponential backoff until success or timeout.
+
+    Exponential backoff (1s, 2s, 4s, 8s, 16s, 16s...) detects fast startup
+    quickly (completes in ~7s when Docker starts in 5s) while maintaining
+    full timeout coverage (reaches 60s total wait for slow startup). Pattern
+    minimizes wait time for fast startup while tolerating slow startup without
+    timeout failures.
+
+    Args:
+        check_fn: Function returning True on success, False to retry.
+                 Exceptions treated as check failure (continues retrying).
+        max_wait: Maximum total wait time in seconds.
+        initial_delay: Starting delay (doubles each iteration).
+        max_delay: Cap prevents excessive wait gaps between retries. 16s allows 4-5
+                   retry attempts within 60s timeout window, balancing responsiveness
+                   (frequent retries) with timeout coverage (reaches 60s total).
+
+    Returns:
+        True if check_fn succeeded within max_wait, False on timeout.
+    """
+    elapsed = 0
+    delay = initial_delay
+    while elapsed < max_wait:
+        try:
+            if check_fn():
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, ConnectionError, OSError):
+            # Docker availability checks fail with platform-specific errors:
+            # - TimeoutExpired: docker info hangs on unresponsive daemon
+            # - FileNotFoundError: Docker CLI binary not in PATH
+            # - PermissionError: socket lacks user permissions (not in docker group)
+            # - ConnectionError: daemon unreachable (stopped, crashed)
+            # - OSError: I/O errors (disk full, broken socket)
+            pass
+        except Exception as e:
+            # Broad handler catches unexpected exceptions (JSONDecodeError from malformed docker info output,
+            # rare transient errors) to prevent crash. Warning log provides visibility for debugging.
+            # Tradeoff: broader exception handling (slower debugging of programming errors) vs defensive
+            # production behavior (no crash on Docker CLI output corruption)
+            logger.warning("check_fn_unexpected_exception", error=str(e), error_type=type(e).__name__)
+            pass
+
+        # Final iteration exits without sleeping (prevents exceeding max_wait timeout)
+        if elapsed + delay >= max_wait:
+            break
+
+        time.sleep(delay)
+        elapsed += delay
+        delay = min(delay * 2, max_delay)
+    return False

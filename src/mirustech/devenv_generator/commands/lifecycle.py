@@ -13,20 +13,18 @@ import rich_click as click
 import structlog
 from rich.console import Console
 
-from mirustech.devenv_generator.application.use_cases.build_or_pull import (
-    BuildOrPullImageUseCase,
+from mirustech.devenv_generator.application.use_cases.build_decision import (
+    BuildDecisionUseCase,
 )
 from mirustech.devenv_generator.commands.management import _is_sandbox_running
 from mirustech.devenv_generator.generator import (
-    SandboxGenerator,
-    compute_build_hash,
     get_bundled_profile,
     load_profile,
 )
-from mirustech.devenv_generator.models import ImageSpec, MountSpec, PortConfig, ProfileConfig
+from mirustech.devenv_generator.models import MountSpec, PortConfig, ProfileConfig
 from mirustech.devenv_generator.settings import get_settings
 from mirustech.devenv_generator.utils.process_manager import ProcessManager
-from mirustech.devenv_generator.utils.subprocess import run_command
+from mirustech.devenv_generator.utils.subprocess import run_command, wait_with_exponential_backoff
 
 console = Console()
 logger = structlog.get_logger()
@@ -169,16 +167,14 @@ def _ensure_docker_running() -> bool:
     with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError):
         run_command(["open", "-a", "Docker"], timeout=5)
 
-    for _ in range(30):
-        time.sleep(2)
-        try:
-            result = run_command(["docker", "info"])
-            if result.returncode == 0:
-                return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-    return False
+    # Exponential backoff (1s, 2s, 4s, 8s, 16s): detects fast startup in ~7s when ready
+    # 60s timeout: accommodates macOS Docker Desktop startup (typically 15-45s)
+    # 16s cap: allows 4-5 retry attempts within 60s window
+    return wait_with_exponential_backoff(
+        check_fn=lambda: run_command(["docker", "info"]).returncode == 0,
+        max_wait=60,
+        max_delay=16,
+    )
 
 
 def _start_serena_server(
@@ -547,74 +543,23 @@ def run(
     )
 
     settings = get_settings()
-    image_spec: ImageSpec | None = None
 
-    build_hash_path = output_path / ".devcontainer" / ".build-hash"
-    current_build_hash = compute_build_hash(config)
-    auto_no_cache = False
-    skip_build = False
-    config_changed = False
+    # Execute build decision logic
+    build_decision = BuildDecisionUseCase()
+    decision_result = build_decision.execute(
+        sandbox_name=sandbox_name,
+        sandbox_dir=output_path,
+        config=config,
+        mount_specs=mount_specs,
+        registry_config=settings.registry if settings.registry.enabled else None,
+        no_cache=no_cache,
+        no_registry=no_registry,
+        no_host_config=no_host_config,
+        push_to_registry=push_to_registry,
+    )
 
-    image_result = run_command(["docker", "images", "-q", f"{sandbox_name}-dev:latest"])
-    image_exists = bool(image_result.stdout.strip())
-
-    if not image_exists:
-        console.print("[dim]No image found, will build[/dim]")
-        config_changed = True
-    elif build_hash_path.exists():
-        stored_hash = build_hash_path.read_text().strip()
-        if stored_hash != current_build_hash:
-            console.print("[yellow]⚠ Build configuration changed - rebuild required[/yellow]")
-            console.print("[dim]Changes detected in profile or templates[/dim]")
-            config_changed = True
-            auto_no_cache = True
-        elif not no_cache:
-            console.print("[dim]Build configuration unchanged[/dim]")
-    else:
-        console.print("[yellow]No build hash found - forcing rebuild for safety[/yellow]")
-        auto_no_cache = True
-        config_changed = True
-
-    if settings.registry.enabled and not no_registry:
-        use_case = BuildOrPullImageUseCase()
-        auto_push = push_to_registry or settings.registry.auto_push
-
-        generator = SandboxGenerator(
-            profile=config,
-            mounts=mount_specs,
-            sandbox_name=sandbox_name,
-            use_host_claude_config=not no_host_config,
-        )
-        generator.generate(output_path)
-
-        result = use_case.execute(
-            project_path=mount_specs[0].host_path,
-            project_name=sandbox_name,
-            registry_config=settings.registry,
-            sandbox_dir=output_path,
-            sandbox_name=sandbox_name,
-            auto_push=auto_push,
-        )
-
-        if result.image_spec:
-            image_spec = result.image_spec
-            skip_build = True
-            generator = SandboxGenerator(
-                profile=config,
-                mounts=mount_specs,
-                sandbox_name=sandbox_name,
-                use_host_claude_config=not no_host_config,
-                image_spec=image_spec,
-            )
-            generator.generate(output_path)
-    else:
-        generator = SandboxGenerator(
-            profile=config,
-            mounts=mount_specs,
-            sandbox_name=sandbox_name,
-            use_host_claude_config=not no_host_config,
-        )
-        generator.generate(output_path)
+    skip_build = decision_result.skip_build
+    auto_no_cache = decision_result.auto_no_cache
 
     console.print()
     console.print(f"[bold green]✓ Sandbox ready:[/bold green] {sandbox_name}")
@@ -628,10 +573,6 @@ def run(
         _start_serena_server(port=effective_serena_port, no_browser=not effective_serena_browser)
 
     _start_gpg_forwarder()
-
-    if not config_changed and image_exists and not no_cache and not skip_build:
-        console.print("[dim]Image up-to-date, skipping build[/dim]")
-        skip_build = True
 
     _run_sandbox(
         sandbox_name,
