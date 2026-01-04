@@ -201,8 +201,11 @@ commands/
   └── diagnostics.py (doctor command + DiagnosticRegistry with 17 checks, 5 fixes)
 
 utils/
-  ├── subprocess.py (run_command wrapper for subprocess.run)
+  ├── subprocess.py (run_command wrapper + exponential backoff)
   └── process_manager.py (ProcessManager for background processes)
+
+application/use_cases/
+  └── build_decision.py (BuildDecisionUseCase - build skip/rebuild logic)
 ```
 
 ### Data Flow
@@ -222,8 +225,22 @@ devenv run --start-serena
   → lifecycle.py:run()
   → ProcessManager.start("serena", ["uvx", "serena", ...])
   → subprocess.Popen() stored in _processes dict
+  → wait_with_exponential_backoff(check_fn, timeout=30)
+      → Retry with delays: 1s → 2s → 4s → 8s → 16s (capped at 16s)
   → atexit.register(cleanup_all)
   → On exit: terminate → wait(5s) → kill if needed
+```
+
+**Build decision:**
+```
+devenv run
+  → lifecycle.py:run()
+  → BuildDecisionUseCase(docker_client, generator)
+  → should_build() checks:
+      - Image exists?
+      - Profile changed?
+      - Dockerfile changed?
+  → Return: (should_build: bool, reason: str)
 ```
 
 **Diagnostics:**
@@ -245,6 +262,12 @@ devenv doctor
 **Why ProcessManager class?** Replaces global `_gpg_forwarder_process` and `_serena_process` variables. Encapsulates state in testable class matching adapter pattern (DockerRegistryClient, SubprocessGitClient). Enables test isolation and mocking.
 
 **Why diagnostic registry with decorators?** 17 check functions + 5 fix functions all return `tuple[bool, str]`. Registry with `@diagnostic.check('name')` decorator provides auto-discovery without manual registration. Mirrors pytest's `@pytest.fixture` pattern (familiar to developers).
+
+**Why exponential backoff?** Background processes (Serena, GPG) need health checks before Docker start. Linear delays (1s, 1s, 1s...) waste time on fast starts; exponential (1s→2s→4s→8s→16s capped at 16s) provides quick feedback for fast starts while handling slow systems.
+
+**Why BuildDecisionUseCase?** Encapsulates complex build skip logic (image existence, profile changes, Dockerfile changes) in single testable component. Separates decision logic from command layer following use case pattern.
+
+**Why property-based tests?** Port and mount specs accept diverse formats (8000, 8080:3000, /path:ro). Property-based tests using hypothesis generate thousands of valid/invalid inputs to verify parsing robustness beyond manual examples.
 
 ### Invariants
 
@@ -333,6 +356,13 @@ For existing projects, Python version is auto-detected. Profiles are optional ov
 
 For new projects (`devenv new`), profiles define the starting environment.
 
+**Available Templates:**
+
+- **default**: General-purpose Python development with comprehensive tooling
+- **minimal**: Fast iteration (<2min build) — Python + essentials only, ideal for small projects and prototyping
+- **web-dev**: Modern web development — Node.js 22, Vite, TypeScript, ESLint, Tailwind CSS for frontend/fullstack work
+- **data-science**: ML and data analysis — numpy, pandas, scikit-learn, jupyter for data science workflows
+
 ```bash
 # Get help about profiles
 devenv profiles help
@@ -360,6 +390,11 @@ devenv profiles path myprofile
 
 # Delete a user profile
 devenv profiles delete myprofile
+
+# Use a specific profile
+devenv run --profile minimal        # Fast iteration
+devenv run --profile web-dev         # Web development
+devenv run --profile data-science    # ML/data analysis
 ```
 
 Profiles are stored in:
@@ -378,6 +413,43 @@ This creates a new project directory with Docker configuration files.
 
 - Docker (auto-starts Docker Desktop on macOS if needed)
 - Claude Code configured on host (`~/.claude` with OAuth credentials)
+
+## Development
+
+### Testing
+
+The project includes comprehensive unit and integration tests:
+
+```bash
+# Run unit tests (fast, no Docker required)
+pytest
+
+# Run integration tests (requires Docker)
+pytest -m integration
+
+# Run all tests
+pytest -m ""
+
+# Run specific test file
+pytest tests/test_lifecycle.py
+
+# Generate coverage report
+pytest --cov=src/mirustech/devenv_generator --cov-report=html
+```
+
+See [TESTING.md](TESTING.md) for detailed testing documentation including:
+- How to run different types of tests
+- Writing new tests
+- Debugging integration tests
+- CI/CD configuration
+
+### Project Structure
+
+See the Architecture section above for detailed information about:
+- Command organization
+- Data flow
+- Design decisions
+- Invariants and tradeoffs
 
 ## License
 
