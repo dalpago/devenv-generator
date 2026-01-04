@@ -29,3 +29,4 @@ Development environment generator for running Claude Code in isolated Docker con
 | `tests/test_diagnostics.py` | Diagnostic registry tests | Testing check/fix registration and execution |
 | `tests/test_process_manager.py` | Process manager tests | Testing background process cleanup |
 | `tests/test_subprocess.py` | Subprocess wrapper tests | Testing subprocess execution, timeouts |
+| `.forgejo/workflows/` | CI/CD pipeline definitions | Modifying CI, debugging build failures |
