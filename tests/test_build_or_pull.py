@@ -418,12 +418,8 @@ class TestBuildOrPullImageFunction:
         sandbox_dir.mkdir()
 
         with (
-            patch.object(
-                BuildOrPullImageUseCase, "execute"
-            ) as mock_execute,
-            patch.object(
-                BuildOrPullImageUseCase, "__init__", return_value=None
-            ) as mock_init,
+            patch.object(BuildOrPullImageUseCase, "execute") as mock_execute,
+            patch.object(BuildOrPullImageUseCase, "__init__", return_value=None) as mock_init,
         ):
             mock_execute.return_value = BuildOrPullResult(
                 image_spec=None,

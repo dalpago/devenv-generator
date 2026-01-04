@@ -430,9 +430,7 @@ class TestLoginWithPrompt:
         client = DockerRegistryClient()
 
         with (
-            patch(
-                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
-            ) as mock_prompt,
+            patch("mirustech.devenv_generator.adapters.docker_registry.Prompt.ask") as mock_prompt,
             patch("subprocess.run") as mock_run,
         ):
             mock_prompt.side_effect = ["testuser", "testpass"]
@@ -446,15 +444,11 @@ class TestLoginWithPrompt:
         client = DockerRegistryClient()
 
         with (
-            patch(
-                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
-            ) as mock_prompt,
+            patch("mirustech.devenv_generator.adapters.docker_registry.Prompt.ask") as mock_prompt,
             patch("subprocess.run") as mock_run,
         ):
             mock_prompt.side_effect = ["testuser", "wrongpass"]
-            mock_run.return_value = MagicMock(
-                returncode=1, stderr="Invalid credentials"
-            )
+            mock_run.return_value = MagicMock(returncode=1, stderr="Invalid credentials")
 
             result = client._login_with_prompt("registry.example.com")
             assert result is False
@@ -464,9 +458,7 @@ class TestLoginWithPrompt:
         client = DockerRegistryClient()
 
         with (
-            patch(
-                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
-            ) as mock_prompt,
+            patch("mirustech.devenv_generator.adapters.docker_registry.Prompt.ask") as mock_prompt,
             patch("subprocess.run") as mock_run,
         ):
             mock_prompt.side_effect = ["testuser", "testpass"]
@@ -480,9 +472,7 @@ class TestLoginWithPrompt:
         client = DockerRegistryClient()
 
         with (
-            patch(
-                "mirustech.devenv_generator.adapters.docker_registry.Prompt.ask"
-            ) as mock_prompt,
+            patch("mirustech.devenv_generator.adapters.docker_registry.Prompt.ask") as mock_prompt,
             patch("subprocess.run") as mock_run,
         ):
             mock_prompt.side_effect = ["testuser", "testpass"]

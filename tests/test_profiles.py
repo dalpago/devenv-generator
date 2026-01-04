@@ -41,9 +41,7 @@ class TestProfilesList:
         assert "default" in result.output
         assert "Available Profiles" in result.output
 
-    def test_profiles_list_shows_user_profiles(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_profiles_list_shows_user_profiles(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should list user profiles from config directory."""
         # Create a user profile
         user_profiles = tmp_path / ".config" / "devenv-generator" / "profiles"
@@ -59,9 +57,7 @@ python:
         )
 
         # Run with mocked home directory
-        result = runner.invoke(
-            main, ["profiles", "list"], env={"HOME": str(tmp_path)}
-        )
+        result = runner.invoke(main, ["profiles", "list"], env={"HOME": str(tmp_path)})
         assert result.exit_code == 0
         assert "myprofile" in result.output
 
@@ -116,9 +112,7 @@ node_packages:
 """
         )
 
-        result = runner.invoke(
-            main, ["profiles", "show", "custom"], env={"HOME": str(tmp_path)}
-        )
+        result = runner.invoke(main, ["profiles", "show", "custom"], env={"HOME": str(tmp_path)})
         assert result.exit_code == 0
         assert "custom" in result.output
         assert "Custom profile for testing" in result.output
@@ -132,9 +126,7 @@ class TestProfilesCreate:
         """Create a CLI runner."""
         return CliRunner()
 
-    def test_create_profile_from_default(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_create_profile_from_default(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should create a new profile from default."""
         result = runner.invoke(
             main,
@@ -145,14 +137,10 @@ class TestProfilesCreate:
         assert "Created profile" in result.output
 
         # Verify file was created
-        profile_path = (
-            tmp_path / ".config" / "devenv-generator" / "profiles" / "newprofile.yaml"
-        )
+        profile_path = tmp_path / ".config" / "devenv-generator" / "profiles" / "newprofile.yaml"
         assert profile_path.exists()
 
-    def test_create_profile_already_exists(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_create_profile_already_exists(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error if profile already exists."""
         user_profiles = tmp_path / ".config" / "devenv-generator" / "profiles"
         user_profiles.mkdir(parents=True)
@@ -166,9 +154,7 @@ class TestProfilesCreate:
         assert result.exit_code == 1
         assert "Profile already exists" in result.output
 
-    def test_create_profile_from_nonexistent(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_create_profile_from_nonexistent(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when source profile doesn't exist."""
         result = runner.invoke(
             main,
@@ -178,9 +164,7 @@ class TestProfilesCreate:
         assert result.exit_code == 1
         assert "Source profile not found" in result.output
 
-    def test_create_profile_custom_output(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_create_profile_custom_output(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should create profile at custom output path."""
         output_path = tmp_path / "custom" / "myprofile.yaml"
 
@@ -236,9 +220,7 @@ class TestProfilesPath:
 
     def test_path_exists_only_failure(self, runner: CliRunner) -> None:
         """Should exit 1 when profile doesn't exist with --exists-only."""
-        result = runner.invoke(
-            main, ["profiles", "path", "nonexistent-xyz", "--exists-only"]
-        )
+        result = runner.invoke(main, ["profiles", "path", "nonexistent-xyz", "--exists-only"])
         assert result.exit_code == 1
 
 
@@ -250,9 +232,7 @@ class TestProfilesDelete:
         """Create a CLI runner."""
         return CliRunner()
 
-    def test_delete_user_profile_with_force(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_delete_user_profile_with_force(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should delete user profile with --force flag."""
         user_profiles = tmp_path / ".config" / "devenv-generator" / "profiles"
         user_profiles.mkdir(parents=True)
@@ -274,9 +254,7 @@ class TestProfilesDelete:
         assert result.exit_code == 1
         assert "Cannot delete bundled profile" in result.output
 
-    def test_delete_nonexistent_profile(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_delete_nonexistent_profile(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error for nonexistent profile."""
         result = runner.invoke(
             main,
@@ -286,9 +264,7 @@ class TestProfilesDelete:
         assert result.exit_code == 1
         assert "Profile not found" in result.output
 
-    def test_delete_without_force_cancelled(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_delete_without_force_cancelled(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should cancel deletion without confirmation."""
         user_profiles = tmp_path / ".config" / "devenv-generator" / "profiles"
         user_profiles.mkdir(parents=True)

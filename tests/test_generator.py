@@ -562,9 +562,7 @@ class TestSandboxGenerator:
         # COW mounts use overlay filesystem
         assert "services:" in content
 
-    def test_sandbox_without_host_claude_config(
-        self, profile: ProfileConfig, mounts: list
-    ) -> None:
+    def test_sandbox_without_host_claude_config(self, profile: ProfileConfig, mounts: list) -> None:
         """Should not mount ~/.claude when disabled."""
         from mirustech.devenv_generator.generator import SandboxGenerator
 

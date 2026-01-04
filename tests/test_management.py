@@ -73,27 +73,21 @@ class TestIsSandboxRunning:
 
     def test_returns_true_when_container_running(self, tmp_path: Path) -> None:
         """Should return True when docker compose returns container IDs."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.return_value = MagicMock(stdout="container123\n")
             result = _is_sandbox_running("myproject", tmp_path)
             assert result is True
 
     def test_returns_false_when_no_containers(self, tmp_path: Path) -> None:
         """Should return False when no containers running."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.return_value = MagicMock(stdout="")
             result = _is_sandbox_running("myproject", tmp_path)
             assert result is False
 
     def test_returns_false_on_exception(self, tmp_path: Path) -> None:
         """Should return False on any exception."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.side_effect = RuntimeError("Docker not available")
             result = _is_sandbox_running("myproject", tmp_path)
             assert result is False
@@ -145,27 +139,21 @@ class TestGetImageSize:
 
     def test_returns_size_on_success(self) -> None:
         """Should return image size as int."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="123456789\n")
             result = _get_image_size("myimage:latest")
             assert result == 123456789
 
     def test_returns_none_on_failure(self) -> None:
         """Should return None when docker command fails."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="")
             result = _get_image_size("nonexistent:latest")
             assert result is None
 
     def test_returns_none_on_invalid_output(self) -> None:
         """Should return None when output isn't a number."""
-        with patch(
-            "mirustech.devenv_generator.commands.management.run_command"
-        ) as mock_run:
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="not a number\n")
             result = _get_image_size("myimage:latest")
             assert result is None
@@ -246,9 +234,7 @@ class TestCleanCommand:
                 "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
                 tmp_path,
             ),
-            patch(
-                "mirustech.devenv_generator.commands.management.run_command"
-            ) as mock_run,
+            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout="")
             result = runner.invoke(main, ["clean"])
@@ -271,18 +257,14 @@ class TestCleanCommand:
                 "mirustech.devenv_generator.commands.management._is_sandbox_running",
                 return_value=False,
             ),
-            patch(
-                "mirustech.devenv_generator.commands.management.run_command"
-            ) as mock_run,
+            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout="")
             result = runner.invoke(main, ["clean", "--stopped", "--dry-run"])
             assert result.exit_code == 0
             assert "Would remove" in result.output or "Dry run" in result.output
 
-    def test_clean_stopped_removes_sandboxes(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_clean_stopped_removes_sandboxes(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should remove stopped sandboxes."""
         # Create a stopped sandbox
         sandbox_dir = tmp_path / "test-sandbox"
@@ -298,9 +280,7 @@ class TestCleanCommand:
                 "mirustech.devenv_generator.commands.management._is_sandbox_running",
                 return_value=False,
             ),
-            patch(
-                "mirustech.devenv_generator.commands.management.run_command"
-            ) as mock_run,
+            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout="")
             result = runner.invoke(main, ["clean", "--stopped"])
@@ -351,9 +331,7 @@ class TestRemoveCommandExtended:
         """Create a CLI runner."""
         return CliRunner()
 
-    def test_rm_running_sandbox_without_force(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_rm_running_sandbox_without_force(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should fail to remove running sandbox without --force."""
         sandbox_dir = tmp_path / "running-sandbox"
         sandbox_dir.mkdir()
@@ -373,9 +351,7 @@ class TestRemoveCommandExtended:
             assert result.exit_code == 1
             assert "running" in result.output.lower()
 
-    def test_rm_running_sandbox_with_force(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_rm_running_sandbox_with_force(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should remove running sandbox with --force."""
         sandbox_dir = tmp_path / "running-sandbox"
         sandbox_dir.mkdir()
@@ -390,9 +366,7 @@ class TestRemoveCommandExtended:
                 "mirustech.devenv_generator.commands.management._is_sandbox_running",
                 return_value=True,
             ),
-            patch(
-                "mirustech.devenv_generator.commands.management.run_command"
-            ) as mock_run,
+            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
             result = runner.invoke(main, ["rm", "running-sandbox", "--force"])
