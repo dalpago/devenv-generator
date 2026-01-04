@@ -25,15 +25,16 @@ def _get_sandbox_dir(name: str) -> Path:
     return SANDBOXES_DIR / name
 
 
-def _load_dynamic_ports(sandbox_dir: Path) -> dict[str, dict]:
+def _load_dynamic_ports(sandbox_dir: Path) -> dict[str, dict[str, str]]:
     """Load dynamic port mappings from JSON file."""
     ports_file = sandbox_dir / ".dynamic-ports.json"
     if ports_file.exists():
-        return json.loads(ports_file.read_text())
+        result: dict[str, dict[str, str]] = json.loads(ports_file.read_text())
+        return result
     return {}
 
 
-def _save_dynamic_ports(sandbox_dir: Path, ports: dict[str, dict]) -> None:
+def _save_dynamic_ports(sandbox_dir: Path, ports: dict[str, dict[str, str]]) -> None:
     """Save dynamic port mappings to JSON file."""
     ports_file = sandbox_dir / ".dynamic-ports.json"
     ports_file.write_text(json.dumps(ports, indent=2))
@@ -131,7 +132,7 @@ def expose_port(port_specs: tuple[str, ...], name: str | None) -> None:
     dynamic_ports = _load_dynamic_ports(sandbox_dir)
     for port in new_ports:
         dynamic_ports[str(port.container)] = {
-            "host_port": port.host_port,
+            "host_port": str(port.host_port),
             "protocol": port.protocol,
             "exposed_at": datetime.now().isoformat(),
             "method": "docker-port",

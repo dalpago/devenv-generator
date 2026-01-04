@@ -26,5 +26,8 @@ jobs:
       - name: Check formatting
         run: uv run ruff format --check src/ tests/
 
+      - name: Type checking
+        run: uv run mypy src/
+
       - name: Run tests
         run: uv run pytest -v --tb=short --cov=src --cov-report=term-missing

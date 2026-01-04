@@ -33,6 +33,7 @@ dev = [
     "hypothesis>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
+    "types-PyYAML>=6.0",
     "pre-commit>=4.0",
 ]
 
@@ -62,6 +63,9 @@ python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

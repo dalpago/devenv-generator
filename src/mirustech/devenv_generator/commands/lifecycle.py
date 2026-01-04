@@ -1,5 +1,7 @@
 """Sandbox lifecycle commands (run, attach, stop, start, cd)."""
 
+from __future__ import annotations
+
 import contextlib
 import os
 import shutil
@@ -21,7 +23,7 @@ from mirustech.devenv_generator.generator import (
     get_bundled_profile,
     load_profile,
 )
-from mirustech.devenv_generator.models import ImageSpec, MountSpec, ProfileConfig
+from mirustech.devenv_generator.models import ImageSpec, MountSpec, PortConfig, ProfileConfig
 from mirustech.devenv_generator.settings import get_settings
 from mirustech.devenv_generator.utils.process_manager import ProcessManager
 from mirustech.devenv_generator.utils.subprocess import run_command
@@ -85,7 +87,7 @@ def _load_profile(profile: str) -> ProfileConfig:
         raise SystemExit(1) from None
 
 
-def _parse_port_spec(spec: str):
+def _parse_port_spec(spec: str) -> PortConfig:
     """Parse port specification string.
 
     Formats:
@@ -94,20 +96,21 @@ def _parse_port_spec(spec: str):
         5432/tcp          -> PortConfig(container=5432, host=5432, protocol='tcp')
         8080:3000/udp     -> PortConfig(container=3000, host=8080, protocol='udp')
     """
-    from mirustech.devenv_generator.models import PortConfig
+    from typing import Literal
 
     # Parse protocol suffix
-    protocol = "tcp"
+    protocol: Literal["tcp", "udp"] = "tcp"
     if "/" in spec:
-        spec, protocol = spec.rsplit("/", 1)
-        if protocol not in ("tcp", "udp"):
-            console.print(f"[red]Invalid protocol:[/red] {protocol}. Must be 'tcp' or 'udp'")
+        spec, proto_str = spec.rsplit("/", 1)
+        if proto_str not in ("tcp", "udp"):
+            console.print(f"[red]Invalid protocol:[/red] {proto_str}. Must be 'tcp' or 'udp'")
             console.print("[dim]Valid formats:[/dim]")
             console.print("  8000              Container and host both use 8000")
             console.print("  8080:3000         Host 8080 → container 3000")
             console.print("  5432/tcp          Explicit protocol")
             console.print("  8080:3000/udp     Host 8080 → container 3000 via UDP")
             raise SystemExit(1) from None
+        protocol = proto_str  # type: ignore[assignment]  # Validated above
 
     # Parse host:container mapping
     try:
@@ -130,7 +133,7 @@ def _parse_port_spec(spec: str):
     return PortConfig(container=container, host=host, protocol=protocol)
 
 
-def _check_port_conflicts(ports, sandbox_name: str) -> None:
+def _check_port_conflicts(ports: list[PortConfig], sandbox_name: str) -> None:
     """Check if host ports are already in use.
 
     Raises:
@@ -178,7 +181,9 @@ def _ensure_docker_running() -> bool:
     return False
 
 
-def _start_serena_server(port: int = 9121, no_browser: bool = False) -> subprocess.Popen | None:
+def _start_serena_server(
+    port: int = 9121, no_browser: bool = False
+) -> subprocess.Popen[bytes] | None:
     """Start Serena MCP server in HTTP mode on host.
 
     Args:
@@ -236,7 +241,7 @@ def _start_serena_server(port: int = 9121, no_browser: bool = False) -> subproce
         return None
 
 
-def _start_gpg_forwarder(port: int = 9876) -> subprocess.Popen | None:
+def _start_gpg_forwarder(port: int = 9876) -> subprocess.Popen[bytes] | None:
     """Start GPG agent socket forwarder on the host.
 
     Args:
