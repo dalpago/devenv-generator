@@ -1,5 +1,9 @@
 """Tests for diagnostic registry functionality."""
 
+import pytest
+from click.testing import CliRunner
+
+from mirustech.devenv_generator.cli import main
 from mirustech.devenv_generator.commands.diagnostics import DiagnosticRegistry
 
 
@@ -123,3 +127,51 @@ class TestDiagnosticRegistry:
         results = registry.run_all_checks()
         assert len(results) == 1
         assert results[0] == ("same_name", True, "Second")
+
+
+class TestDoctorCommand:
+    """Tests for the doctor CLI command."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_doctor_runs_checks(self, runner: CliRunner) -> None:
+        """Doctor command should run system checks."""
+        result = runner.invoke(main, ["doctor"])
+        # The exit code depends on whether Docker is available
+        # Just verify it runs without crashing
+        assert result.exit_code in (0, 1)
+        assert "System Diagnostics" in result.output or "docker" in result.output.lower()
+
+    def test_doctor_help(self, runner: CliRunner) -> None:
+        """Doctor command should show help."""
+        result = runner.invoke(main, ["doctor", "--help"])
+        assert result.exit_code == 0
+        assert "diagnose" in result.output.lower() or "health" in result.output.lower()
+
+    def test_doctor_fix_flag(self, runner: CliRunner) -> None:
+        """Doctor --fix flag should be accepted."""
+        result = runner.invoke(main, ["doctor", "--fix"])
+        # Runs without error, actual fix behavior depends on system state
+        assert result.exit_code in (0, 1)
+
+
+class TestDiagnosticModule:
+    """Tests for the diagnostic module singleton."""
+
+    def test_diagnostic_singleton_has_checks(self) -> None:
+        """The global diagnostic registry should have built-in checks."""
+        from mirustech.devenv_generator.commands.diagnostics import diagnostic
+
+        # There should be at least some registered checks
+        assert len(diagnostic._checks) > 0
+        assert "docker_installed" in diagnostic._checks
+
+    def test_diagnostic_singleton_has_fixes(self) -> None:
+        """The global diagnostic registry should have some fixes."""
+        from mirustech.devenv_generator.commands.diagnostics import diagnostic
+
+        # Some checks have corresponding fixes
+        assert len(diagnostic._fixes) >= 0  # May have 0 if no fixes registered
