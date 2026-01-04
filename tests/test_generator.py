@@ -2,10 +2,18 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pytest
 
-from mirustech.devenv_generator.generator import DevEnvGenerator, load_profile
+from mirustech.devenv_generator.generator import (
+    DevEnvGenerator,
+    compute_build_hash,
+    get_bundled_profile,
+    get_docker_socket_gid,
+    get_host_user_ids,
+    load_profile,
+)
 from mirustech.devenv_generator.models import NetworkConfig, ProfileConfig, PythonConfig
 
 
@@ -31,6 +39,81 @@ python:
         config = load_profile(profile_path)
         assert config.name == "test-profile"
         assert config.description == "Test description"
+
+
+class TestGetBundledProfile:
+    """Tests for get_bundled_profile function."""
+
+    def test_loads_default_profile(self) -> None:
+        """Should load the default bundled profile."""
+        profile = get_bundled_profile("default")
+        assert profile.name == "default"
+
+    def test_mirustech_maps_to_default(self) -> None:
+        """Should map deprecated 'mirustech' to 'default'."""
+        profile = get_bundled_profile("mirustech")
+        assert profile.name == "default"
+
+    def test_not_found_raises(self) -> None:
+        """Should raise FileNotFoundError for unknown profile."""
+        with pytest.raises(FileNotFoundError, match="Profile not found"):
+            get_bundled_profile("nonexistent-profile-xyz")
+
+
+class TestGetDockerSocketGid:
+    """Tests for get_docker_socket_gid function."""
+
+    def test_returns_int(self) -> None:
+        """Should return an integer GID."""
+        gid = get_docker_socket_gid()
+        assert isinstance(gid, int)
+
+    def test_fallback_when_socket_missing(self) -> None:
+        """Should return 999 when docker socket doesn't exist."""
+        with patch("pathlib.Path.exists", return_value=False):
+            gid = get_docker_socket_gid()
+            assert gid == 999
+
+
+class TestGetHostUserIds:
+    """Tests for get_host_user_ids function."""
+
+    def test_returns_tuple(self) -> None:
+        """Should return a tuple of (uid, gid)."""
+        uid, gid = get_host_user_ids()
+        assert isinstance(uid, int)
+        assert isinstance(gid, int)
+
+    def test_returns_current_user_ids(self) -> None:
+        """Should return the current user's UID and GID."""
+        import os
+
+        uid, gid = get_host_user_ids()
+        assert uid == os.getuid()
+        assert gid == os.getgid()
+
+
+class TestComputeBuildHash:
+    """Tests for compute_build_hash function."""
+
+    def test_returns_hex_string(self) -> None:
+        """Should return a hex digest string."""
+        profile = ProfileConfig(name="test")
+        hash_result = compute_build_hash(profile)
+        assert isinstance(hash_result, str)
+        assert len(hash_result) == 32  # MD5 hex digest length
+
+    def test_same_profile_same_hash(self) -> None:
+        """Same profile should produce same hash."""
+        profile1 = ProfileConfig(name="test", python=PythonConfig(version="3.12"))
+        profile2 = ProfileConfig(name="test", python=PythonConfig(version="3.12"))
+        assert compute_build_hash(profile1) == compute_build_hash(profile2)
+
+    def test_different_profile_different_hash(self) -> None:
+        """Different profiles should produce different hashes."""
+        profile1 = ProfileConfig(name="test", python=PythonConfig(version="3.12"))
+        profile2 = ProfileConfig(name="test", python=PythonConfig(version="3.13"))
+        assert compute_build_hash(profile1) != compute_build_hash(profile2)
 
 
 class TestDevEnvGenerator:

@@ -1,15 +1,20 @@
 """Tests for configuration models."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from mirustech.devenv_generator.models import (
+    ImageSpec,
     MountsConfig,
+    MountSpec,
     NetworkConfig,
     PortConfig,
     PortsConfig,
     ProfileConfig,
     PythonConfig,
+    sanitize_project_name,
 )
 
 
@@ -250,3 +255,118 @@ class TestPortsConfig:
             ]
         )
         assert len(config.ports) == 2
+
+
+class TestMountSpec:
+    """Tests for MountSpec model."""
+
+    def test_expand_path_tilde(self, tmp_path: Path) -> None:
+        """Test that ~ is expanded in paths."""
+        spec = MountSpec(host_path=tmp_path)
+        assert spec.host_path.is_absolute()
+
+    def test_container_path_default(self, tmp_path: Path) -> None:
+        """Test container path uses host path name."""
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        spec = MountSpec(host_path=project_dir)
+        assert spec.container_path == "/workspace/myproject"
+
+    def test_container_path_with_custom_name(self, tmp_path: Path) -> None:
+        """Test container path uses custom name when provided."""
+        project_dir = tmp_path / "myproject"
+        project_dir.mkdir()
+        spec = MountSpec(host_path=project_dir, name="custom")
+        assert spec.container_path == "/workspace/custom"
+
+    def test_from_string_simple_path(self, tmp_path: Path) -> None:
+        """Test from_string with simple path."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        spec = MountSpec.from_string(str(project_dir))
+        assert spec.host_path == project_dir
+        assert spec.mode == "rw"
+
+    def test_from_string_readonly(self, tmp_path: Path) -> None:
+        """Test from_string with :ro suffix."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        spec = MountSpec.from_string(f"{project_dir}:ro")
+        assert spec.host_path == project_dir
+        assert spec.mode == "ro"
+
+    def test_from_string_cow(self, tmp_path: Path) -> None:
+        """Test from_string with :cow suffix."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        spec = MountSpec.from_string(f"{project_dir}:cow")
+        assert spec.host_path == project_dir
+        assert spec.mode == "cow"
+
+    def test_from_string_rw_explicit(self, tmp_path: Path) -> None:
+        """Test from_string with explicit :rw suffix."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        spec = MountSpec.from_string(f"{project_dir}:rw")
+        assert spec.mode == "rw"
+
+
+class TestSanitizeProjectName:
+    """Tests for sanitize_project_name function."""
+
+    def test_lowercase(self) -> None:
+        """Test that uppercase is converted to lowercase."""
+        assert sanitize_project_name("MyProject") == "myproject"
+
+    def test_underscores_to_dashes(self) -> None:
+        """Test that underscores are replaced with dashes."""
+        assert sanitize_project_name("my_project") == "my-project"
+
+    def test_spaces_to_dashes(self) -> None:
+        """Test that spaces are replaced with dashes."""
+        assert sanitize_project_name("my project") == "my-project"
+
+    def test_removes_special_chars(self) -> None:
+        """Test that special characters are removed."""
+        assert sanitize_project_name("my@project!test") == "myprojecttest"
+
+    def test_collapses_multiple_dashes(self) -> None:
+        """Test that multiple dashes are collapsed."""
+        assert sanitize_project_name("my--project---test") == "my-project-test"
+
+    def test_strips_leading_trailing_dashes(self) -> None:
+        """Test that leading/trailing dashes are stripped."""
+        assert sanitize_project_name("-myproject-") == "myproject"
+
+    def test_prepends_devenv_for_numeric_start(self) -> None:
+        """Test that 'devenv-' is prepended when name starts with number."""
+        assert sanitize_project_name("123project") == "devenv-123project"
+
+    def test_empty_name_uses_default(self) -> None:
+        """Test that empty name uses default."""
+        assert sanitize_project_name("!!!") == "devenv-project"
+
+
+class TestImageSpec:
+    """Tests for ImageSpec dataclass."""
+
+    def test_full_name(self) -> None:
+        """Test full_name property."""
+        spec = ImageSpec(registry="git.mirus-tech.com", project="myproject", tag="abc123")
+        assert spec.full_name == "git.mirus-tech.com/myproject:abc123"
+
+    def test_with_tag(self) -> None:
+        """Test with_tag method returns new instance."""
+        spec = ImageSpec(registry="git.mirus-tech.com", project="myproject", tag="abc123")
+        new_spec = spec.with_tag("latest")
+        assert new_spec.tag == "latest"
+        assert new_spec.registry == spec.registry
+        assert new_spec.project == spec.project
+        # Original unchanged
+        assert spec.tag == "abc123"
+
+    def test_immutable(self) -> None:
+        """Test that ImageSpec is frozen (immutable)."""
+        spec = ImageSpec(registry="registry", project="proj", tag="tag")
+        with pytest.raises(AttributeError):
+            spec.tag = "new"  # type: ignore[misc]
