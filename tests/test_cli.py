@@ -277,3 +277,62 @@ class TestRunCommandPorts:
         result = runner.invoke(main, ["run", "--help"])
         assert "--expose-port" in result.output
         assert "--no-ports" in result.output
+
+
+class TestHelpCommand:
+    """Tests for the help command."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_help_shows_usage_guide(self, runner: CliRunner) -> None:
+        """Help command shows comprehensive guide."""
+        result = runner.invoke(main, ["help"])
+        assert result.exit_code == 0
+        assert "Quick Start" in result.output
+        assert "Common Commands" in result.output
+
+    def test_main_help_flag(self, runner: CliRunner) -> None:
+        """--help flag shows main help."""
+        result = runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "devenv" in result.output.lower()
+
+
+class TestVersionCommand:
+    """Tests for version output."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_version_flag(self, runner: CliRunner) -> None:
+        """--version shows version."""
+        result = runner.invoke(main, ["--version"])
+        assert result.exit_code == 0
+        # Version format: "devenv, version X.Y.Z"
+        assert "version" in result.output.lower()
+
+
+class TestProfilesCommand:
+    """Tests for profiles commands."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_profiles_list(self, runner: CliRunner) -> None:
+        """List available profiles."""
+        result = runner.invoke(main, ["profiles", "list"])
+        assert result.exit_code == 0
+        assert "default" in result.output
+
+    def test_profiles_show(self, runner: CliRunner) -> None:
+        """Show profile details."""
+        result = runner.invoke(main, ["profiles", "show", "default"])
+        assert result.exit_code == 0
+        assert "default" in result.output

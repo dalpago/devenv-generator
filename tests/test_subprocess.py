@@ -89,3 +89,19 @@ def test_run_command_logs_execution(caplog):
         # Verify logging occurred (structlog debug message)
         # Note: Exact log format depends on structlog configuration
         assert mock_run.called
+
+
+def test_run_command_stream_output():
+    """Test that stream_output=True skips capture_output."""
+    with patch("mirustech.devenv_generator.utils.subprocess.subprocess.run") as mock_run:
+        mock_result = MagicMock(spec=subprocess.CompletedProcess)
+        mock_run.return_value = mock_result
+
+        run_command(["docker", "build"], stream_output=True)
+
+        # stream_output=True should NOT pass capture_output
+        mock_run.assert_called_once_with(
+            ["docker", "build"],
+            text=True,
+            timeout=10,
+        )
