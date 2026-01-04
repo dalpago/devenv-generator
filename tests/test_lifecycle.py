@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from click.testing import CliRunner
 
 from mirustech.devenv_generator.cli import main
@@ -129,6 +131,35 @@ class TestParsePortSpec:
         """Should exit on invalid host:container format."""
         with pytest.raises(SystemExit):
             _parse_port_spec("abc:3000")
+
+    valid_ports = st.integers(min_value=1, max_value=65535)
+    protocols = st.sampled_from(["tcp", "udp"])
+
+    @given(port=valid_ports)
+    def test_property_simple_port_roundtrip(self, port: int) -> None:
+        """Simple port specs parse correctly for all valid ports."""
+        result = _parse_port_spec(str(port))
+        assert result.container == port
+        assert result.host_port == port
+        assert result.protocol == "tcp"
+
+    @given(port=valid_ports, protocol=protocols)
+    def test_property_port_with_protocol(self, port: int, protocol: str) -> None:
+        """Port with protocol parses correctly for all valid combinations."""
+        result = _parse_port_spec(f"{port}/{protocol}")
+        assert result.container == port
+        assert result.host_port == port
+        assert result.protocol == protocol
+
+    @given(host=valid_ports, container=valid_ports, protocol=protocols)
+    def test_property_host_container_mapping(
+        self, host: int, container: int, protocol: str
+    ) -> None:
+        """Host:container mapping parses correctly for all valid ports."""
+        result = _parse_port_spec(f"{host}:{container}/{protocol}")
+        assert result.container == container
+        assert result.host_port == host
+        assert result.protocol == protocol
 
 
 class TestCheckPortConflicts:

@@ -3,6 +3,8 @@
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from mirustech.devenv_generator.models import (
@@ -309,6 +311,36 @@ class TestMountSpec:
         project_dir.mkdir()
         spec = MountSpec.from_string(f"{project_dir}:rw")
         assert spec.mode == "rw"
+
+    valid_paths = st.text(
+        alphabet=st.characters(
+            whitelist_categories=("Lu", "Ll", "Nd"),
+            whitelist_characters="/-_.",
+        ),
+        min_size=1,
+        max_size=100,
+    ).filter(lambda p: p.strip() == p)
+    modes = st.sampled_from(["rw", "ro", "cow"])
+
+    @given(path=valid_paths)
+    def test_property_default_mode(self, path: str) -> None:
+        """Mount specs without explicit mode default to rw for all paths."""
+        spec = MountSpec.from_string(path)
+        assert spec.mode == "rw"
+        assert isinstance(spec.host_path, Path)
+
+    @given(path=valid_paths, mode=modes)
+    def test_property_explicit_mode(self, path: str, mode: str) -> None:
+        """Mount specs with explicit mode parse correctly for all combinations."""
+        spec = MountSpec.from_string(f"{path}:{mode}")
+        assert spec.mode == mode
+        assert isinstance(spec.host_path, Path)
+
+    @given(mode=modes)
+    def test_property_mode_invariant(self, mode: str) -> None:
+        """Mode field only accepts valid values (rw/ro/cow)."""
+        spec = MountSpec.from_string(f"/test/path:{mode}")
+        assert spec.mode in ("rw", "ro", "cow")
 
 
 class TestSanitizeProjectName:
