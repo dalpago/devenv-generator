@@ -37,10 +37,15 @@ def _list_sandboxes() -> list[tuple[str, Path, bool]]:
 
 
 def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
-    """Check if a sandbox container is running."""
+    """Check if a sandbox container is running.
+
+    Uses --status=running to correctly detect only actively running containers.
+    Without this filter, stopped or exited one-off containers (from 'docker compose run')
+    would cause false positives.
+    """
     try:
         result = run_command(
-            ["docker", "compose", "-p", name, "ps", "-q"],
+            ["docker", "compose", "-p", name, "ps", "-q", "--status", "running"],
             cwd=sandbox_dir,
         )
         return bool(result.stdout.strip())
