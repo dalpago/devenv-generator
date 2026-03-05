@@ -338,10 +338,51 @@ TOKENREFRESH
     if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
         cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
     fi
-    # Copy MCP plugins directory (serena, context7, etc. configs)
+    # Copy MCP plugins directory, filtering out external plugins that need auth
+    # tokens unavailable in the container (OAuth, API keys, etc.)
     if [ -d /home/developer/.claude-host/plugins ]; then
         echo "Copying MCP plugins from host..."
-        cp -r /home/developer/.claude-host/plugins /home/developer/.claude/
+        # Copy everything except external_plugins (we'll filter those)
+        mkdir -p /home/developer/.claude/plugins
+        # Copy top-level files (blocklist.json, known_marketplaces.json, etc.)
+        find /home/developer/.claude-host/plugins -maxdepth 1 -type f -exec cp {} /home/developer/.claude/plugins/ \;
+        # Copy non-external marketplace content (built-in plugins)
+        if [ -d /home/developer/.claude-host/plugins/marketplaces ]; then
+            for marketplace_dir in /home/developer/.claude-host/plugins/marketplaces/*; do
+                mp_name=$(basename "$marketplace_dir")
+                # Copy plugins subdir (built-in plugins, no auth needed)
+                if [ -d "$marketplace_dir/plugins" ]; then
+                    mkdir -p "/home/developer/.claude/plugins/marketplaces/$mp_name"
+                    cp -r "$marketplace_dir/plugins" "/home/developer/.claude/plugins/marketplaces/$mp_name/"
+                fi
+                # Selectively copy external plugins — skip ones needing auth tokens
+                if [ -d "$marketplace_dir/external_plugins" ]; then
+                    mkdir -p "/home/developer/.claude/plugins/marketplaces/$mp_name/external_plugins"
+                    for plugin_dir in "$marketplace_dir/external_plugins"/*/; do
+                        plugin_name=$(basename "$plugin_dir")
+                        mcp_json="$plugin_dir/.mcp.json"
+                        if [ -f "$mcp_json" ]; then
+                            # Skip plugins that reference auth tokens or OAuth
+                            if grep -qE 'Authorization|API_KEY|TOKEN|"oauth"' "$mcp_json" 2>/dev/null; then
+                                echo "  Skipping $plugin_name (needs auth token)"
+                                continue
+                            fi
+                            # Skip HTTP/SSE plugins without local command (need browser OAuth)
+                            if grep -q '"type": "http"\|"type": "sse"' "$mcp_json" 2>/dev/null; then
+                                if ! grep -q '"command"' "$mcp_json" 2>/dev/null; then
+                                    echo "  Skipping $plugin_name (needs browser OAuth)"
+                                    continue
+                                fi
+                            fi
+                        fi
+                        cp -r "$plugin_dir" "/home/developer/.claude/plugins/marketplaces/$mp_name/external_plugins/"
+                        echo "  Copied $plugin_name"
+                    done
+                fi
+                # Copy any other files in marketplace dir (metadata, etc.)
+                find "$marketplace_dir" -maxdepth 1 -type f -exec cp {} "/home/developer/.claude/plugins/marketplaces/$mp_name/" \; 2>/dev/null
+            done
+        fi
 
         # Fix absolute paths in known_marketplaces.json (host paths don't exist in container)
         MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
@@ -352,7 +393,7 @@ TOKENREFRESH
         fi
 
         # List copied MCP servers for debugging
-        echo "MCP servers found:"
+        echo "MCP servers copied:"
         find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  {}" \;
     fi
     # Copy projects directory (per-project CLAUDE.md files) if it exists
@@ -498,25 +539,21 @@ if [ -n "$GPG_AGENT_PORT" ]; then
     sleep 0.5  # Give socat time to start
 fi
 
-# Find the first workspace directory with pyproject.toml
-for dir in /workspace/*; do
-    if [ -d "$dir" ] && [ -f "$dir/pyproject.toml" ]; then
-        cd "$dir"
-
-        # Check for stale .venv (symlinks to non-existent Python from host)
-        if [ -d "$dir/.venv" ]; then
-            VENV_PYTHON="$dir/.venv/bin/python"
-            if [ -L "$VENV_PYTHON" ] && [ ! -e "$VENV_PYTHON" ]; then
-                echo "Detected stale .venv (host Python not available), removing..."
-                rm -rf "$dir/.venv"
-            fi
+# Install dependencies in the primary project (working directory set by docker-compose)
+dir="$(pwd)"
+if [ -f "$dir/pyproject.toml" ]; then
+    # Check for stale .venv (symlinks to non-existent Python from host)
+    if [ -d "$dir/.venv" ]; then
+        VENV_PYTHON="$dir/.venv/bin/python"
+        if [ -L "$VENV_PYTHON" ] && [ ! -e "$VENV_PYTHON" ]; then
+            echo "Detected stale .venv (host Python not available), removing..."
+            rm -rf "$dir/.venv"
         fi
-
-        echo "Installing dependencies in $dir..."
-        uv sync --quiet 2>/dev/null || true
-        break
     fi
-done
+
+    echo "Installing dependencies in $dir..."
+    uv sync --quiet 2>/dev/null || true
+fi
 
 # If no command provided, start Claude in YOLO mode
 if [ $# -eq 0 ]; then
