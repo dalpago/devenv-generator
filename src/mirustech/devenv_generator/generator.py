@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from importlib.resources import files
 from pathlib import Path
 
@@ -186,6 +187,7 @@ class DevEnvGenerator:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        self.env.tests["match"] = lambda value, pattern: re.search(pattern, value) is not None
         self.logger = logger.bind(profile=profile.name, project=self.project_name)
 
     def render_dockerfile(self) -> str:
@@ -442,6 +444,7 @@ class SandboxGenerator:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        self.env.tests["match"] = lambda value, pattern: re.search(pattern, value) is not None
         self.logger = logger.bind(
             sandbox=sandbox_name,
             profile=profile.name,

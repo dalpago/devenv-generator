@@ -296,6 +296,44 @@ def _start_gpg_forwarder(port: int = 9876) -> subprocess.Popen[bytes] | None:
         return None
 
 
+def _export_keychain_credentials() -> bool:
+    """Export Claude Code credentials from macOS Keychain to ~/.claude/.credentials.json.
+
+    The native installer stores credentials in the OS keychain instead of a file.
+    The container can't access macOS Keychain, so we export to a file that gets
+    mounted into the container via the existing .claude-host bind mount.
+
+    Returns True if credentials were exported, False otherwise.
+    """
+    import json
+    import platform
+
+    if platform.system() != "Darwin":
+        return False
+
+    creds_path = Path("~/.claude/.credentials.json").expanduser()
+
+    try:
+        result = run_command(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+            timeout=5,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+
+        # Validate it's proper JSON before writing
+        creds = json.loads(result.stdout.strip())
+        if "claudeAiOauth" not in creds:
+            return False
+
+        creds_path.write_text(json.dumps(creds))
+        console.print("[dim]Exported Claude credentials from keychain[/dim]")
+        return True
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not export keychain credentials: {e}[/yellow]")
+        return False
+
+
 def _run_sandbox(
     sandbox_name: str,
     sandbox_dir: Path,
@@ -576,6 +614,9 @@ def run(
         _start_serena_server(port=effective_serena_port, no_browser=not effective_serena_browser)
 
     _start_gpg_forwarder()
+
+    if not no_host_config:
+        _export_keychain_credentials()
 
     _run_sandbox(
         sandbox_name,

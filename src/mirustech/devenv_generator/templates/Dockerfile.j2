@@ -82,9 +82,10 @@ RUN {% for tool in profile.uvx_tools %}uv tool install {{ tool }}{% if not loop.
 
 {% endif %}
 
-{% if profile.node_packages %}
-# Install Node.js packages globally
-RUN npm install -g {% for pkg in profile.node_packages %}{{ pkg }}{% if not loop.last %} {% endif %}{% endfor %}
+{% set other_node_pkgs = profile.node_packages | reject('match', '@anthropic-ai/claude-code') | list %}
+{% if other_node_pkgs %}
+# Install Node.js packages globally (excluding Claude Code, installed natively below)
+RUN npm install -g {% for pkg in other_node_pkgs %}{{ pkg }}{% if not loop.last %} {% endif %}{% endfor %}
 
 {% endif %}
 
@@ -288,9 +289,50 @@ fi
 # Copy useful files from host Claude config (if mounted at .claude-host)
 # This preserves sandbox's permissive settings.json while getting auth, CLAUDE.md, etc.
 if [ -d /home/developer/.claude-host ]; then
-    # Copy credentials (auth token from 'claude login')
+    # Copy credentials (auth token from 'claude login' or keychain export)
     if [ -f /home/developer/.claude-host/.credentials.json ]; then
         cp /home/developer/.claude-host/.credentials.json /home/developer/.claude/
+
+        # Attempt to refresh expired OAuth token using refresh_token
+        python3 << 'TOKENREFRESH' 2>/dev/null || true
+import json, time, urllib.request, urllib.parse
+
+creds_path = '/home/developer/.claude/.credentials.json'
+with open(creds_path) as f:
+    creds = json.load(f)
+
+oauth = creds.get('claudeAiOauth', {})
+expires_at = oauth.get('expiresAt', 0)
+refresh_token = oauth.get('refreshToken', '')
+
+# Only refresh if token is expired or expires within 5 minutes
+if refresh_token and (expires_at / 1000) < (time.time() + 300):
+    print("OAuth token expired or expiring soon, refreshing...")
+    data = urllib.parse.urlencode({
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token,
+    }).encode()
+    req = urllib.request.Request(
+        'https://claude.ai/api/oauth/token',
+        data=data,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+        oauth['accessToken'] = result['access_token']
+        oauth['refreshToken'] = result.get('refresh_token', refresh_token)
+        oauth['expiresAt'] = int((time.time() + result.get('expires_in', 86400)) * 1000)
+        creds['claudeAiOauth'] = oauth
+        with open(creds_path, 'w') as f:
+            json.dump(creds, f)
+        print(f"  Token refreshed, new expiry: {time.ctime(oauth['expiresAt']/1000)}")
+    except Exception as e:
+        print(f"  Token refresh failed: {e}")
+        print("  You may need to run /login manually")
+else:
+    print("OAuth token still valid, no refresh needed")
+TOKENREFRESH
     fi
     # Copy global CLAUDE.md if it exists
     if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
@@ -552,6 +594,18 @@ RUN chmod +x /usr/local/bin/network-entrypoint
 # Switch to the user (using UID:GID to handle cases where user already exists)
 USER $USER_UID:$USER_GID
 
+{% set claude_pkgs = profile.node_packages | select('match', '@anthropic-ai/claude-code') | list %}
+{% if claude_pkgs %}
+{% set claude_spec = claude_pkgs[0] %}
+# Install Claude Code via native installer (avoids npm-to-native migration warning)
+{% if '@' in claude_spec.split('/')[-1] %}
+{% set claude_version = claude_spec.split('@')[-1] %}
+RUN curl -fsSL https://claude.ai/install.sh | bash -s {{ claude_version }}
+{% else %}
+RUN curl -fsSL https://claude.ai/install.sh | bash
+{% endif %}
+{% endif %}
+
 # Create workspace directory
 WORKDIR /workspace
 
@@ -563,6 +617,7 @@ ENV PATH="/home/developer/.local/bin:$PATH"
 {% if 'zsh' in profile.system_packages %}
 ENV SHELL=/bin/zsh
 {% endif %}
+ENV DISABLE_AUTOUPDATER=1
 {% if 'gnupg' in profile.system_packages %}
 # Source GPG config for non-interactive bash (used by Claude)
 ENV BASH_ENV=/home/developer/.gpg_forward
