@@ -471,7 +471,7 @@ class TestStopExistingSandbox:
         return CliRunner()
 
     def test_stop_existing_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
-        """Should stop an existing running sandbox."""
+        """Should stop an existing running sandbox using force cleanup."""
         sandbox_dir = tmp_path / "my-sandbox"
         sandbox_dir.mkdir()
         (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
@@ -481,11 +481,34 @@ class TestStopExistingSandbox:
                 "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
                 tmp_path,
             ),
-            patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run,
+            patch(
+                "mirustech.devenv_generator.commands.lifecycle._force_cleanup_project_containers",
+                return_value=True,
+            ),
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             result = runner.invoke(main, ["stop", "my-sandbox"])
             assert result.exit_code == 0
+            assert "Stopped" in result.output
+
+    def test_stop_fails_when_cleanup_fails(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Should report failure when force cleanup cannot stop all containers."""
+        sandbox_dir = tmp_path / "my-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.lifecycle._force_cleanup_project_containers",
+                return_value=False,
+            ),
+        ):
+            result = runner.invoke(main, ["stop", "my-sandbox"])
+            assert result.exit_code == 1
+            assert "Failed to stop" in result.output
 
 
 class TestAttachExistingSandbox:

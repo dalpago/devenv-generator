@@ -36,6 +36,76 @@ def _list_sandboxes() -> list[tuple[str, Path, bool]]:
     return sorted(sandboxes, key=lambda x: x[0])
 
 
+def _force_cleanup_project_containers(
+    name: str, sandbox_dir: Path, *, remove_volumes: bool = False
+) -> bool:
+    """Stop all containers belonging to a Docker Compose project, including one-off containers.
+
+    docker compose down only stops service containers (from 'up'). Containers started with
+    'docker compose run' have com.docker.compose.oneoff=True and survive 'down' silently.
+    This function handles both by:
+      1. Running docker compose down (handles service containers + networks)
+      2. Querying for any surviving project containers via label filter
+      3. Stopping those individually with docker stop
+
+    Args:
+        name: Docker Compose project name.
+        sandbox_dir: Directory containing docker-compose.yml.
+        remove_volumes: Pass -v to docker compose down to remove volumes.
+
+    Returns:
+        True if all containers were stopped successfully, False otherwise.
+    """
+    # Step 1: docker compose down (best-effort for service containers)
+    down_cmd = ["docker", "compose", "-p", name, "down", "--remove-orphans"]
+    if remove_volumes:
+        down_cmd.append("-v")
+    down_result = run_command(down_cmd, cwd=sandbox_dir, timeout=60)
+
+    if down_result.returncode != 0:
+        logger.warning(
+            "docker_compose_down_failed",
+            project=name,
+            stderr=down_result.stderr,
+        )
+
+    # Step 2: Find any surviving containers (one-off containers from 'docker compose run')
+    ps_result = run_command(
+        [
+            "docker",
+            "ps",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={name}",
+        ],
+        timeout=10,
+    )
+
+    surviving_ids = ps_result.stdout.strip().split("\n") if ps_result.stdout.strip() else []
+
+    if not surviving_ids:
+        return True
+
+    # Step 3: Stop surviving containers individually
+    logger.info(
+        "stopping_orphaned_containers",
+        project=name,
+        count=len(surviving_ids),
+    )
+    all_stopped = True
+    for container_id in surviving_ids:
+        stop_result = run_command(["docker", "stop", container_id], timeout=30)
+        if stop_result.returncode != 0:
+            logger.warning(
+                "failed_to_stop_container",
+                container=container_id,
+                stderr=stop_result.stderr,
+            )
+            all_stopped = False
+
+    return all_stopped
+
+
 def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
     """Check if a sandbox container is running.
 
@@ -50,6 +120,7 @@ def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
         )
         return bool(result.stdout.strip())
     except Exception:
+        logger.warning("sandbox_running_check_failed", sandbox=name, exc_info=True)
         return False
 
 
@@ -156,7 +227,10 @@ def remove_sandbox(name: str | None, force: bool) -> None:
 
         # Stop first
         console.print(f"[dim]Stopping {name}...[/dim]")
-        run_command(["docker", "compose", "-p", name, "down", "-v"], cwd=sandbox_dir, timeout=60)
+        if not _force_cleanup_project_containers(name, sandbox_dir, remove_volumes=True):
+            console.print(f"[red]Failed to stop all containers for:[/red] {name}")
+            console.print("Some containers may still be running. Check with: docker ps")
+            raise SystemExit(1)
 
     # Remove the directory
     shutil.rmtree(sandbox_dir)
@@ -263,6 +337,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
             if dry_run:
                 console.print(f"  [dim]Would remove:[/dim] {name}")
             else:
+                _force_cleanup_project_containers(name, path, remove_volumes=True)
                 shutil.rmtree(path)
                 console.print(f"  [green]✓[/green] Removed {name}")
                 removed_count += 1

@@ -16,7 +16,10 @@ from rich.console import Console
 from mirustech.devenv_generator.application.use_cases.build_decision import (
     BuildDecisionUseCase,
 )
-from mirustech.devenv_generator.commands.management import _is_sandbox_running
+from mirustech.devenv_generator.commands.management import (
+    _force_cleanup_project_containers,
+    _is_sandbox_running,
+)
 from mirustech.devenv_generator.generator import (
     get_bundled_profile,
     load_profile,
@@ -636,12 +639,11 @@ def stop_sandbox(name: str | None) -> None:
         raise SystemExit(1)
 
     console.print(f"[dim]Stopping {name}...[/dim]")
-    result = run_command(["docker", "compose", "-p", name, "down"], cwd=sandbox_dir, timeout=60)
-
-    if result.returncode == 0:
+    if _force_cleanup_project_containers(name, sandbox_dir):
         console.print(f"[bold green]✓ Stopped:[/bold green] {name}")
     else:
-        console.print(f"[red]Failed to stop:[/red]\n{result.stderr}")
+        console.print(f"[red]Failed to stop all containers for:[/red] {name}")
+        console.print("Some containers may still be running. Check with: docker ps")
         raise SystemExit(1)
 
 

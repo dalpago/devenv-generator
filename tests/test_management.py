@@ -8,6 +8,7 @@ from click.testing import CliRunner
 
 from mirustech.devenv_generator.cli import main
 from mirustech.devenv_generator.commands.management import (
+    _force_cleanup_project_containers,
     _format_size,
     _get_dir_size,
     _get_image_size,
@@ -91,6 +92,91 @@ class TestIsSandboxRunning:
             mock_run.side_effect = RuntimeError("Docker not available")
             result = _is_sandbox_running("myproject", tmp_path)
             assert result is False
+
+    def test_logs_warning_on_exception(self, tmp_path: Path) -> None:
+        """Should log warning with exc_info when exception occurs."""
+        with (
+            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
+            patch("mirustech.devenv_generator.commands.management.logger") as mock_logger,
+        ):
+            mock_run.side_effect = RuntimeError("Docker not available")
+            _is_sandbox_running("myproject", tmp_path)
+            mock_logger.warning.assert_called_once_with(
+                "sandbox_running_check_failed", sandbox="myproject", exc_info=True
+            )
+
+
+class TestForceCleanupProjectContainers:
+    """Tests for _force_cleanup_project_containers function."""
+
+    def test_returns_true_when_down_succeeds_no_survivors(self, tmp_path: Path) -> None:
+        """Should return True when docker compose down succeeds and no containers remain."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stderr=""),  # docker compose down
+                MagicMock(returncode=0, stdout=""),  # docker ps (no survivors)
+            ]
+            result = _force_cleanup_project_containers("myproject", tmp_path)
+            assert result is True
+
+    def test_stops_surviving_oneoff_containers(self, tmp_path: Path) -> None:
+        """Should stop one-off containers that survive docker compose down."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stderr=""),  # docker compose down
+                MagicMock(returncode=0, stdout="abc123\ndef456\n"),  # docker ps (survivors)
+                MagicMock(returncode=0),  # docker stop abc123
+                MagicMock(returncode=0),  # docker stop def456
+            ]
+            result = _force_cleanup_project_containers("myproject", tmp_path)
+            assert result is True
+            # Verify docker stop was called for each surviving container
+            stop_calls = [c for c in mock_run.call_args_list if "stop" in c[0][0]]
+            assert len(stop_calls) == 2
+
+    def test_returns_false_when_stop_fails(self, tmp_path: Path) -> None:
+        """Should return False when a surviving container cannot be stopped."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stderr=""),  # docker compose down
+                MagicMock(returncode=0, stdout="abc123\n"),  # docker ps (survivor)
+                MagicMock(returncode=1, stderr="permission denied"),  # docker stop fails
+            ]
+            result = _force_cleanup_project_containers("myproject", tmp_path)
+            assert result is False
+
+    def test_passes_remove_volumes_flag(self, tmp_path: Path) -> None:
+        """Should pass -v flag when remove_volumes=True."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stderr=""),  # docker compose down -v
+                MagicMock(returncode=0, stdout=""),  # docker ps (no survivors)
+            ]
+            _force_cleanup_project_containers("myproject", tmp_path, remove_volumes=True)
+            down_cmd = mock_run.call_args_list[0][0][0]
+            assert "-v" in down_cmd
+
+    def test_does_not_pass_volumes_flag_by_default(self, tmp_path: Path) -> None:
+        """Should not pass -v flag when remove_volumes=False (default)."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0, stderr=""),  # docker compose down
+                MagicMock(returncode=0, stdout=""),  # docker ps (no survivors)
+            ]
+            _force_cleanup_project_containers("myproject", tmp_path)
+            down_cmd = mock_run.call_args_list[0][0][0]
+            assert "-v" not in down_cmd
+
+    def test_continues_cleanup_after_down_fails(self, tmp_path: Path) -> None:
+        """Should still check for and stop surviving containers even if down fails."""
+        with patch("mirustech.devenv_generator.commands.management.run_command") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=1, stderr="error"),  # docker compose down fails
+                MagicMock(returncode=0, stdout="abc123\n"),  # docker ps (survivor)
+                MagicMock(returncode=0),  # docker stop succeeds
+            ]
+            result = _force_cleanup_project_containers("myproject", tmp_path)
+            assert result is True
 
 
 class TestListSandboxes:
@@ -265,7 +351,7 @@ class TestCleanCommand:
             assert "Would remove" in result.output or "Dry run" in result.output
 
     def test_clean_stopped_removes_sandboxes(self, runner: CliRunner, tmp_path: Path) -> None:
-        """Should remove stopped sandboxes."""
+        """Should clean Docker resources and remove stopped sandboxes."""
         # Create a stopped sandbox
         sandbox_dir = tmp_path / "test-sandbox"
         sandbox_dir.mkdir()
@@ -281,11 +367,19 @@ class TestCleanCommand:
                 return_value=False,
             ),
             patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
+            patch(
+                "mirustech.devenv_generator.commands.management._force_cleanup_project_containers",
+                return_value=True,
+            ) as mock_cleanup,
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout="")
             result = runner.invoke(main, ["clean", "--stopped"])
             assert result.exit_code == 0
             assert not sandbox_dir.exists()
+            # Verify cleanup was called with remove_volumes=True
+            mock_cleanup.assert_called_once_with(
+                "test-sandbox", sandbox_dir, remove_volumes=True
+            )
 
 
 class TestStatusCommandWithSandboxes:
@@ -366,12 +460,39 @@ class TestRemoveCommandExtended:
                 "mirustech.devenv_generator.commands.management._is_sandbox_running",
                 return_value=True,
             ),
-            patch("mirustech.devenv_generator.commands.management.run_command") as mock_run,
+            patch(
+                "mirustech.devenv_generator.commands.management._force_cleanup_project_containers",
+                return_value=True,
+            ),
         ):
-            mock_run.return_value = MagicMock(returncode=0)
             result = runner.invoke(main, ["rm", "running-sandbox", "--force"])
             assert result.exit_code == 0
             assert not sandbox_dir.exists()
+
+    def test_rm_force_aborts_when_cleanup_fails(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Should abort removal when Docker cleanup fails (containers still running)."""
+        sandbox_dir = tmp_path / "running-sandbox"
+        sandbox_dir.mkdir()
+        (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
+
+        with (
+            patch(
+                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                tmp_path,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._is_sandbox_running",
+                return_value=True,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.management._force_cleanup_project_containers",
+                return_value=False,
+            ),
+        ):
+            result = runner.invoke(main, ["rm", "running-sandbox", "--force"])
+            assert result.exit_code == 1
+            assert sandbox_dir.exists()  # Directory should NOT be removed
+            assert "Failed to stop" in result.output
 
     def test_rm_stopped_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should remove stopped sandbox."""
