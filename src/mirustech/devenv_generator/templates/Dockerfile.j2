@@ -202,7 +202,7 @@ RUN echo '{"hasCompletedOnboarding":true,"theme":"dark"}' > /home/$USERNAME/.cla
 
 # Pre-configure Claude Code settings with broad permissions (container is isolated)
 # Default model is set to Opus 4.5 for best code quality
-RUN echo '{"permissions":{"allow":["Bash","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions","model":"claude-opus-4-5-20251101"}' > /home/$USERNAME/.claude/settings.json \
+RUN echo '{"permissions":{"allow":["Bash","Read","Write","Edit","Glob","Grep","Task","WebFetch","WebSearch","NotebookEdit"]},"defaultMode":"bypassPermissions","model":"claude-opus-4-5-20251101","enableAllProjectMcpServers":true}' > /home/$USERNAME/.claude/settings.json \
     && chown $USER_UID:$USER_GID /home/$USERNAME/.claude/settings.json
 
 
@@ -395,10 +395,12 @@ TOKENREFRESH
         # List copied MCP servers for debugging
         echo "MCP servers copied:"
         find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  {}" \;
+
     fi
-    # Copy projects directory (per-project CLAUDE.md files) if it exists
+    # Copy projects directory (per-project CLAUDE.md, memory files) if it exists
+    # Use -n (no-clobber) to preserve sandbox-created memory files across restarts
     if [ -d /home/developer/.claude-host/projects ]; then
-        cp -r /home/developer/.claude-host/projects /home/developer/.claude/
+        cp -rn /home/developer/.claude-host/projects /home/developer/.claude/
     fi
     # Copy agents directory (custom agents) if it exists
     if [ -d /home/developer/.claude-host/agents ]; then
