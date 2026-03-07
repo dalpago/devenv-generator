@@ -486,27 +486,36 @@ if 'mcpServers' in host_data and host_data['mcpServers']:
     container_data['mcpServers'] = servers
     print(f"  Copied {len(servers)} MCP servers: {list(servers.keys())}")
 
+# Inject profile-configured MCP servers into global config
+# These go in ~/.claude.json so they're available from ANY workspace
+if 'mcpServers' not in container_data:
+    container_data['mcpServers'] = {}
+
+{% if profile.mcp.enable_context7 %}
+# Context7 - library documentation MCP (profile: enable_context7)
+if 'context7' not in container_data['mcpServers']:
+    container_data['mcpServers']['context7'] = {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp"]
+    }
+    print("  Added context7 MCP server (from profile)")
+{% endif %}
+
+{% if profile.mcp.enable_serena %}
+# Serena HTTP MCP (profile: enable_serena)
+serena_url = os.environ.get('SERENA_MCP_URL', '')
+if serena_url and 'serena' not in container_data['mcpServers']:
+    container_data['mcpServers']['serena'] = {
+        "type": "http",
+        "url": serena_url
+    }
+    print(f"  Added Serena HTTP MCP server: {serena_url} (from profile)")
+{% endif %}
+
 # Write merged config
 with open(container_config, 'w') as f:
     json.dump(container_data, f, indent=2)
 PYMCP
-fi
-
-# If SERENA_MCP_URL is set, override Serena config to use HTTP mode
-if [ -n "$SERENA_MCP_URL" ]; then
-    echo "Configuring Serena for HTTP mode..."
-    SERENA_DIR="/home/developer/.claude/plugins/marketplaces/claude-plugins-official/external_plugins/serena"
-    mkdir -p "$SERENA_DIR"
-    cat > "$SERENA_DIR/.mcp.json" << SERENACFG
-{
-  "serena": {
-    "type": "streamable-http",
-    "url": "$SERENA_MCP_URL"
-  }
-}
-SERENACFG
-    echo "  Serena HTTP URL: $SERENA_MCP_URL"
-    echo "  Config written to: $SERENA_DIR/.mcp.json"
 fi
 
 # Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)
