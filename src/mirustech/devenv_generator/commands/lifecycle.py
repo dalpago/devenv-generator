@@ -395,11 +395,11 @@ def _run_sandbox(
         if shell:
             console.print(f"[bold green]Starting shell in {sandbox_name}...[/bold green]")
             console.print("[dim]Press Ctrl+D to exit[/dim]")
-            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev", "/bin/zsh"]
+            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "--service-ports", "dev", "/bin/zsh"]
         else:
             console.print(f"[bold green]Starting Claude Code in {sandbox_name}...[/bold green]")
             console.print("[dim]Installing dependencies and starting Claude...[/dim]")
-            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "dev"]
+            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "--service-ports", "dev"]
 
         console.print()
 
