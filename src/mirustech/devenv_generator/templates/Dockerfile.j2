@@ -672,6 +672,7 @@ ENV PATH="/home/developer/.local/bin:$PATH"
 ENV SHELL=/bin/zsh
 {% endif %}
 ENV DISABLE_AUTOUPDATER=1
+ENV UV_LINK_MODE=copy
 {% if 'gnupg' in profile.system_packages %}
 # Source GPG config for non-interactive bash (used by Claude)
 ENV BASH_ENV=/home/developer/.gpg_forward
