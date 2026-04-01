@@ -214,6 +214,8 @@ def _start_serena_server(
             "start-mcp-server",
             "--transport",
             "streamable-http",
+            "--host",
+            "0.0.0.0",
             "--port",
             str(port),
         ]
@@ -221,17 +223,42 @@ def _start_serena_server(
         if no_browser:
             cmd.extend(["--enable-web-dashboard", "False"])
 
+        log_dir = Path("~/.local/share/devenv-sandboxes").expanduser()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        serena_log = log_dir / ".serena.log"
+        log_file = serena_log.open("w")
+
         proc = process_manager.start(
             "serena",
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=log_file,
         )
 
         if proc is None:
+            log_file.close()
             return None
 
         time.sleep(3)
+
+        # Verify Serena is actually responding (GET /mcp returns 406 which is fine —
+        # it means uvicorn is up; only connection errors indicate a real failure)
+        import urllib.request
+        import urllib.error
+
+        try:
+            urllib.request.urlopen(f"http://localhost:{port}/mcp", timeout=5)
+        except urllib.error.HTTPError:
+            pass  # 406/405 etc. — server is up, just doesn't accept GET
+        except (urllib.error.URLError, OSError):
+            console.print("[yellow]Warning: Serena started but is not responding[/yellow]")
+            try:
+                tail = serena_log.read_text().strip().splitlines()[-10:]
+                for line in tail:
+                    console.print(f"[dim]  {line}[/dim]")
+            except Exception:
+                pass
+            return proc
 
         console.print(f"[dim]Serena MCP server running on http://localhost:{port}[/dim]")
         return proc
