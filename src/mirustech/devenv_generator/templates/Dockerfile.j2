@@ -566,6 +566,12 @@ if [ -f "$dir/pyproject.toml" ]; then
     uv sync --quiet 2>/dev/null || true
 fi
 
+# Activate project venv so Claude/skills have access to project dependencies (e.g. pydantic)
+if [ -d "$dir/.venv/bin" ]; then
+    export VIRTUAL_ENV="$dir/.venv"
+    export PATH="$dir/.venv/bin:$PATH"
+fi
+
 # If no command provided, start Claude in YOLO mode
 if [ $# -eq 0 ]; then
     exec claude --permission-mode bypassPermissions
