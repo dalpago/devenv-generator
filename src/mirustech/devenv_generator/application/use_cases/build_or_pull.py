@@ -1,6 +1,5 @@
 """Use case for building or pulling container images."""
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from mirustech.devenv_generator.adapters.docker_registry import DockerRegistryCl
 from mirustech.devenv_generator.adapters.git_client import SubprocessGitClient
 from mirustech.devenv_generator.models import ImageSpec, sanitize_project_name
 from mirustech.devenv_generator.settings import RegistryConfig
+from mirustech.devenv_generator.utils.subprocess import run_command
 
 logger = structlog.get_logger()
 console = Console()
@@ -160,9 +160,11 @@ class BuildOrPullImageUseCase:
         console.print("[dim]Building container...[/dim]")
 
         # Build using docker compose
-        build_result = subprocess.run(
+        build_result = run_command(
             ["docker", "compose", "-p", f"devenv-{sandbox_name}", "build"],
             cwd=sandbox_dir,
+            timeout=600,
+            stream_output=True,
         )
 
         if build_result.returncode != 0:

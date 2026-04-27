@@ -7,7 +7,6 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import rich_click as click
@@ -217,26 +216,33 @@ def _start_serena_server(
             log_file.close()
             return None
 
-        time.sleep(3)
-
-        # Verify Serena is actually responding (GET /mcp returns 406 which is fine —
-        # it means uvicorn is up; only connection errors indicate a real failure)
         import urllib.error
         import urllib.request
 
-        try:
-            urllib.request.urlopen(f"http://localhost:{port}/mcp", timeout=5)
-        except urllib.error.HTTPError:
-            pass  # 406/405 etc. — server is up, just doesn't accept GET
-        except (urllib.error.URLError, OSError):
-            console.print("[yellow]Warning: Serena started but is not responding[/yellow]")
+        def _serena_responds(port: int) -> bool:
+            """Return True when Serena's HTTP server accepts connections.
+
+            A 406/405 response means uvicorn is up — Serena rejects GET /mcp with
+            a method-not-allowed error, which is a successful startup signal.
+            URLError means the port is not yet bound.
+            """
             try:
-                tail = serena_log.read_text().strip().splitlines()[-10:]
-                for line in tail:
-                    console.print(f"[dim]  {line}[/dim]")
-            except Exception:
-                pass
-            return proc
+                urllib.request.urlopen(f"http://localhost:{port}/mcp", timeout=2)
+                return True
+            except urllib.error.HTTPError:
+                return True  # 4xx: server responded, startup complete
+            except (urllib.error.URLError, OSError):
+                return False  # port not yet bound
+
+        # Fixed 3s sleep undershoots slow startup and overshoots fast startup.
+        # wait_with_exponential_backoff (1s, 2s, 4s...) returns immediately when
+        # Serena responds and tolerates startup up to max_wait without adding latency.
+        started = wait_with_exponential_backoff(
+            lambda: _serena_responds(port),
+            max_wait=30,
+        )
+        if not started:
+            console.print("[yellow]Warning: Serena started but is not responding[/yellow]")
 
         console.print(f"[dim]Serena MCP server running on http://localhost:{port}[/dim]")
         return proc

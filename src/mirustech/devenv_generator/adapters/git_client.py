@@ -6,6 +6,8 @@ from typing import Protocol
 
 import structlog
 
+from mirustech.devenv_generator.utils.subprocess import run_command
+
 logger = structlog.get_logger()
 
 
@@ -63,11 +65,9 @@ class SubprocessGitClient:
 
         # Also check parent directories
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["git", "rev-parse", "--git-dir"],
                 cwd=path,
-                capture_output=True,
-                text=True,
                 timeout=self.timeout,
             )
             return result.returncode == 0
@@ -84,11 +84,9 @@ class SubprocessGitClient:
             The full commit SHA as a string, or None if not available.
         """
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["git", "rev-parse", "HEAD"],
                 cwd=path,
-                capture_output=True,
-                text=True,
                 timeout=self.timeout,
             )
 

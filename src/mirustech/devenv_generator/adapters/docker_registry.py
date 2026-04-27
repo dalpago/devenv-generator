@@ -9,6 +9,7 @@ from rich.prompt import Prompt
 
 from mirustech.devenv_generator.models import ImageSpec
 from mirustech.devenv_generator.settings import AuthMethod, RegistryConfig
+from mirustech.devenv_generator.utils.subprocess import run_command
 
 logger = structlog.get_logger()
 console = Console()
@@ -106,10 +107,8 @@ class DockerRegistryClient:
         try:
             # Try to get login status - this is a quick way to check
             # if credentials exist for the registry
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "login", "--get-login", registry],
-                capture_output=True,
-                text=True,
                 timeout=10,
             )
             if result.returncode == 0:
@@ -153,11 +152,9 @@ class DockerRegistryClient:
         try:
             # Use --password-stdin for security
             password = config.password.get_secret_value()
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "login", "-u", config.username, "--password-stdin", registry],
                 input=password,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
 
@@ -193,11 +190,9 @@ class DockerRegistryClient:
         password = Prompt.ask("Password", password=True)
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "login", "-u", username, "--password-stdin", registry],
                 input=password,
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
 
@@ -236,10 +231,8 @@ class DockerRegistryClient:
         self.logger.info("pulling_image", image=image_name)
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "pull", image_name],
-                capture_output=True,
-                text=True,
                 timeout=self.timeout,
             )
 
@@ -279,10 +272,8 @@ class DockerRegistryClient:
         self.logger.info("pushing_image", image=image_name)
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "push", image_name],
-                capture_output=True,
-                text=True,
                 timeout=self.timeout,
             )
 
@@ -318,10 +309,8 @@ class DockerRegistryClient:
         self.logger.debug("tagging_image", source=source, target=target_name)
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "tag", source, target_name],
-                capture_output=True,
-                text=True,
                 timeout=30,
             )
 
@@ -356,9 +345,8 @@ class DockerRegistryClient:
         image_name = image.full_name
 
         try:
-            result = subprocess.run(
+            result = run_command(
                 ["docker", "image", "inspect", image_name],
-                capture_output=True,
                 timeout=10,
             )
             return result.returncode == 0
