@@ -406,6 +406,54 @@ class TestHealthCheck:
         assert "pgrep" in content
 
 
+class TestStarshipInstall:
+    """Tests for Starship prompt installation in generated Dockerfile."""
+
+    def test_dockerfile_includes_starship_when_enabled(self) -> None:
+        """Generated Dockerfile contains Starship install when shell.starship is true."""
+        from mirustech.devenv_generator.models import ShellConfig
+
+        profile = ProfileConfig(
+            name="starship-test",
+            shell=ShellConfig(starship=True, starship_preset="catppuccin-powerline"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "starship.rs/install.sh" in content
+        assert "starship preset catppuccin-powerline" in content
+        assert 'eval "$(starship init zsh)"' in content
+
+    def test_dockerfile_omits_starship_when_disabled(self) -> None:
+        """Generated Dockerfile omits Starship when shell.starship is false."""
+        from mirustech.devenv_generator.models import ShellConfig
+
+        profile = ProfileConfig(
+            name="no-starship-test",
+            shell=ShellConfig(starship=False),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "starship.rs/install.sh" not in content
+        assert "starship init" not in content
+
+    def test_dockerfile_starship_no_preset_skips_preset_command(self) -> None:
+        """Generated Dockerfile skips preset command when starship_preset is empty."""
+        from mirustech.devenv_generator.models import ShellConfig
+
+        profile = ProfileConfig(
+            name="starship-no-preset",
+            shell=ShellConfig(starship=True, starship_preset=""),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "starship.rs/install.sh" in content
+        assert "starship preset" not in content
+        assert 'eval "$(starship init zsh)"' in content
+
+
 class TestSSHKeyMounting:
     """Tests for SSH key mounting in generated files."""
 

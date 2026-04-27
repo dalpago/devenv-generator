@@ -17,6 +17,7 @@ from mirustech.devenv_generator.models import (
     PortsConfig,
     ProfileConfig,
     PythonConfig,
+    ShellConfig,
     sanitize_project_name,
 )
 
@@ -106,6 +107,28 @@ class TestMountsConfig:
         assert config.ssh_keys is False
         assert config.claude_config == "bind"
         assert config.happy_config is True
+
+
+class TestShellConfig:
+    """Tests for ShellConfig model."""
+
+    def test_defaults(self) -> None:
+        """ShellConfig validates with defaults (starship=False, starship_preset='')."""
+        config = ShellConfig()
+        assert config.starship is False
+        assert config.starship_preset == ""
+
+    def test_starship_enabled(self) -> None:
+        """StarShip can be enabled with a preset."""
+        config = ShellConfig(starship=True, starship_preset="catppuccin-powerline")
+        assert config.starship is True
+        assert config.starship_preset == "catppuccin-powerline"
+
+    def test_starship_enabled_no_preset(self) -> None:
+        """Starship can be enabled without a preset."""
+        config = ShellConfig(starship=True)
+        assert config.starship is True
+        assert config.starship_preset == ""
 
 
 class TestProfileConfig:

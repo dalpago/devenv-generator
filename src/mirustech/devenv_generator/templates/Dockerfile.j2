@@ -186,6 +186,18 @@ RUN set -e; \
     chown -R $USER_UID:$USER_GID .oh-my-zsh .zshrc
 {% endif %}
 
+{% if profile.shell.starship %}
+# Starship: curl installer produces a single static binary with no runtime deps.
+# The profile's github_releases field downloads .deb files only; Starship distributes
+# .tar.gz, so it is handled here via its own installer rather than via github_releases.
+RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
+{% if profile.shell.starship_preset %}
+# Write preset at build time so the container is self-contained; no host config dependency.
+RUN starship preset {{ profile.shell.starship_preset }} -o ~/.config/starship.toml
+{% endif %}
+RUN echo 'eval "$(starship init zsh)"' >> ~/.zshrc
+{% endif %}
+
 {% if 'tmux' in profile.system_packages %}
 # Install oh-my-tmux for the user
 RUN set -e; \

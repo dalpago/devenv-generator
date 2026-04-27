@@ -97,3 +97,7 @@ mounts:
 
 # Enable Playwright browser dependencies for frontend testing
 playwright: true
+
+shell:
+  starship: true
+  starship_preset: "catppuccin-powerline"

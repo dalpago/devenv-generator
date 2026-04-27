@@ -128,6 +128,13 @@ class PortsConfig(BaseModel):
         return ports
 
 
+class ShellConfig(BaseModel):
+    """Shell prompt configuration for container environment."""
+
+    starship: bool = False
+    starship_preset: str = ""
+
+
 class ProfileConfig(BaseModel):
     """Complete profile configuration for a development environment."""
 
@@ -170,6 +177,9 @@ class ProfileConfig(BaseModel):
     ports: PortsConfig = Field(
         default_factory=PortsConfig,
         description="Port mappings to expose from container to host",
+    )
+    shell: ShellConfig = Field(
+        default_factory=ShellConfig, description="Shell prompt configuration"
     )
 
 
