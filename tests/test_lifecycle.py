@@ -449,12 +449,24 @@ class TestStartExistingSandbox:
         sandbox_dir.mkdir()
         (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
 
+        mock_not_running = MagicMock(returncode=0, stdout="")
         with (
             patch(
                 "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run,
+            patch(
+                "mirustech.devenv_generator.commands.management.run_command",
+                return_value=mock_not_running,
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.lifecycle.subprocess.run",
+                return_value=MagicMock(returncode=0),
+            ),
+            patch(
+                "mirustech.devenv_generator.commands.lifecycle.process_manager",
+            ),
         ):
             mock_run.return_value = MagicMock(returncode=0)
             result = runner.invoke(main, ["start", "my-sandbox"])
@@ -739,3 +751,72 @@ class TestMountSpecParsing:
 
         spec = MountSpec.from_string("/path/to/project")
         assert spec.mode == "rw"
+
+
+class TestRunSandboxCleanup:
+    """Tests for _run_sandbox cleanup and exit code behaviour."""
+
+    _lc = "mirustech.devenv_generator.commands.lifecycle"
+
+    def test_cleanup_called_after_subprocess_completes(self, tmp_path: Path) -> None:
+        """process_manager.cleanup_all() is called after subprocess exits normally."""
+        from mirustech.devenv_generator.commands.lifecycle import _run_sandbox
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with (
+            patch(f"{self._lc}._ensure_docker_running", return_value=True),
+            patch(f"{self._lc}.run_command") as mock_run_command,
+            patch(f"{self._lc}.subprocess.run", return_value=mock_result),
+            patch(f"{self._lc}.process_manager.cleanup_all") as mock_cleanup,
+            pytest.raises(SystemExit),
+        ):
+            mock_run_command.return_value = MagicMock(returncode=0)
+            _run_sandbox(
+                "test", tmp_path, detach=False, shell=False, skip_build=True, no_cache=False
+            )
+
+        mock_cleanup.assert_called_once()
+
+    def test_cleanup_called_when_subprocess_raises(self, tmp_path: Path) -> None:
+        """process_manager.cleanup_all() is called even when subprocess.run raises."""
+        from mirustech.devenv_generator.commands.lifecycle import _run_sandbox
+
+        with (
+            patch(f"{self._lc}._ensure_docker_running", return_value=True),
+            patch(f"{self._lc}.run_command") as mock_run_command,
+            patch(
+                f"{self._lc}.subprocess.run",
+                side_effect=FileNotFoundError("docker not found"),
+            ),
+            patch(f"{self._lc}.process_manager.cleanup_all") as mock_cleanup,
+            pytest.raises((FileNotFoundError, SystemExit)),
+        ):
+            mock_run_command.return_value = MagicMock(returncode=0)
+            _run_sandbox(
+                "test", tmp_path, detach=False, shell=False, skip_build=True, no_cache=False
+            )
+
+        mock_cleanup.assert_called_once()
+
+    def test_exit_code_propagates_from_subprocess(self, tmp_path: Path) -> None:
+        """sys.exit receives the return code from subprocess.run."""
+        from mirustech.devenv_generator.commands.lifecycle import _run_sandbox
+
+        mock_result = MagicMock()
+        mock_result.returncode = 42
+
+        with (
+            patch(f"{self._lc}._ensure_docker_running", return_value=True),
+            patch(f"{self._lc}.run_command") as mock_run_command,
+            patch(f"{self._lc}.subprocess.run", return_value=mock_result),
+            patch(f"{self._lc}.process_manager.cleanup_all"),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            mock_run_command.return_value = MagicMock(returncode=0)
+            _run_sandbox(
+                "test", tmp_path, detach=False, shell=False, skip_build=True, no_cache=False
+            )
+
+        assert exc_info.value.code == 42
