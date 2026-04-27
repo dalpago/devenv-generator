@@ -180,6 +180,32 @@ Your system is ready to use devenv.
 - **SSH**: SSH client with agent forwarding support (`ssh-add -l` works)
 - **MCP Servers**: Auto-configured from host (context7, serena, etc.)
 
+## Environment Parity
+
+Containers can mirror your host shell environment via profile configuration.
+
+### Starship Prompt
+
+When `shell.starship` is enabled, the container installs Starship and applies the specified preset at build time. The prompt in the container matches your host.
+
+```yaml
+shell:
+  starship: true
+  starship_preset: "catppuccin-powerline"  # Any preset from starship.rs/presets
+```
+
+### Dotfiles via chezmoi
+
+When `dotfiles.chezmoi_repo` is set, the container entrypoint runs `chezmoi init --apply --exclude=scripts` on first start, applying configuration files (.zshrc, starship.toml, git config) without executing install scripts. Package installation remains the Dockerfile's responsibility. For SOPS-encrypted dotfiles, mount your host age key with `chezmoi_age_key: true`.
+
+```yaml
+dotfiles:
+  chezmoi_repo: "https://github.com/youruser/dotfiles.git"
+  chezmoi_age_key: false  # Set true to mount ~/.config/sops/age/keys.txt from host
+```
+
+Both features are opt-in and disabled by default. Enable them in a profile with `devenv profiles edit`.
+
 ## Architecture
 
 ### Module Organization

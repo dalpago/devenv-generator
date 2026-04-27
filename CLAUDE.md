@@ -20,12 +20,14 @@ Development environment generator for running Claude Code in isolated Docker con
 | `src/mirustech/devenv_generator/utils/` | Shared utilities | Modifying subprocess execution, process management |
 | `src/mirustech/devenv_generator/utils/subprocess.py` | Subprocess wrapper with logging, timeouts, exponential backoff | Changing subprocess behavior, adding logging, implementing retry logic |
 | `src/mirustech/devenv_generator/utils/process_manager.py` | Background process lifecycle (GPG, Serena) | Debugging background process cleanup, timeout issues |
+| `src/mirustech/devenv_generator/utils/sandbox.py` | Shared constants and helpers (SANDBOXES_DIR, compose_project_name, get_sandbox_dir, load_profile_by_name) | Adding new shared sandbox utilities |
 | `src/mirustech/devenv_generator/generator.py` | Container generation, profile loading | Modifying Dockerfile generation, template rendering |
 | `src/mirustech/devenv_generator/models.py` | Pydantic models (ProfileConfig, MountSpec, ImageSpec) | Adding profile fields, validation rules |
 | `src/mirustech/devenv_generator/settings.py` | Configuration management, environment variables | Modifying global settings, config paths |
 | `src/mirustech/devenv_generator/use_cases/` | Business logic, domain operations | Adding features that span multiple adapters |
 | `src/mirustech/devenv_generator/application/use_cases/build_decision.py` | BuildDecisionUseCase (build skip/rebuild logic) | Modifying image build decision logic, cache management |
 | `src/mirustech/devenv_generator/adapters/` | External system integrations (Docker, Git) | Modifying Docker/Git interactions |
+| `src/mirustech/devenv_generator/templates/devenv-start.sh.j2` | Container entrypoint script (SSH, Claude config, chezmoi, MCP merge) | Debugging container startup, modifying entrypoint behavior |
 | `src/mirustech/devenv_generator/profiles/` | Profile templates (default, minimal, web-dev, data-science) | Creating new profiles, understanding profile structure |
 | `src/mirustech/devenv_generator/profiles/minimal.yaml` | Minimal profile template (Python + essentials, <2min build) | Fast iteration on small projects |
 | `src/mirustech/devenv_generator/profiles/web-dev.yaml` | Web development profile (Node 22, Vite, TypeScript, ESLint) | Frontend/fullstack development |
