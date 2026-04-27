@@ -135,6 +135,13 @@ class ShellConfig(BaseModel):
     starship_preset: str = ""
 
 
+class DotfilesConfig(BaseModel):
+    """Dotfiles sync configuration for container environment."""
+
+    chezmoi_repo: str = ""
+    chezmoi_age_key: bool = False
+
+
 class ProfileConfig(BaseModel):
     """Complete profile configuration for a development environment."""
 
@@ -180,6 +187,9 @@ class ProfileConfig(BaseModel):
     )
     shell: ShellConfig = Field(
         default_factory=ShellConfig, description="Shell prompt configuration"
+    )
+    dotfiles: DotfilesConfig = Field(
+        default_factory=DotfilesConfig, description="Dotfiles sync configuration"
     )
 
 

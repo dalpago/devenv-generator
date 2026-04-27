@@ -101,3 +101,7 @@ playwright: true
 shell:
   starship: true
   starship_preset: "catppuccin-powerline"
+
+dotfiles:
+  chezmoi_repo: ""  # Set to your dotfiles repo URL for host environment parity
+  chezmoi_age_key: false  # Enable only when dotfiles repo uses SOPS-encrypted secrets

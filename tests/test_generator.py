@@ -630,3 +630,75 @@ class TestSandboxGenerator:
         # When disabled, should not mount host claude config
         # The exact behavior depends on template implementation
         assert "services:" in content
+
+
+class TestChezmoi:
+    """Tests for chezmoi dotfiles integration in generated files."""
+
+    def test_dockerfile_includes_chezmoi_install_when_repo_set(self) -> None:
+        """Generated Dockerfile contains chezmoi install when dotfiles.chezmoi_repo is set."""
+        from mirustech.devenv_generator.models import DotfilesConfig
+
+        profile = ProfileConfig(
+            name="chezmoi-test",
+            dotfiles=DotfilesConfig(chezmoi_repo="https://github.com/user/dotfiles"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "get.chezmoi.io" in content
+
+    def test_dockerfile_omits_chezmoi_when_repo_empty(self) -> None:
+        """Generated Dockerfile omits chezmoi when dotfiles.chezmoi_repo is empty."""
+        from mirustech.devenv_generator.models import DotfilesConfig
+
+        profile = ProfileConfig(
+            name="no-chezmoi-test",
+            dotfiles=DotfilesConfig(chezmoi_repo=""),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_dockerfile()
+
+        assert "get.chezmoi.io" not in content
+        assert "chezmoi init" not in content
+
+    def test_sandbox_compose_mounts_age_key_when_enabled(self) -> None:
+        """Generated docker-compose mounts age key when dotfiles.chezmoi_age_key is true."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import DotfilesConfig, MountSpec
+
+        profile = ProfileConfig(
+            name="chezmoi-age-test",
+            dotfiles=DotfilesConfig(
+                chezmoi_repo="https://github.com/user/dotfiles",
+                chezmoi_age_key=True,
+            ),
+        )
+        mounts = [MountSpec(host_path=Path("/home/user/project"), mode="rw")]
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_docker_compose()
+
+        assert "~/.config/chezmoi/key.txt:/home/developer/.config/chezmoi/key.txt:ro" in content
+
+    def test_sandbox_compose_omits_age_key_when_disabled(self) -> None:
+        """Generated docker-compose omits age key mount when dotfiles.chezmoi_age_key is false."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import DotfilesConfig, MountSpec
+
+        profile = ProfileConfig(
+            name="no-age-key-test",
+            dotfiles=DotfilesConfig(chezmoi_repo="", chezmoi_age_key=False),
+        )
+        mounts = [MountSpec(host_path=Path("/home/user/project"), mode="rw")]
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        content = generator.render_docker_compose()
+
+        assert "~/.config/chezmoi/key.txt:/home/developer/.config/chezmoi/key.txt:ro" not in content

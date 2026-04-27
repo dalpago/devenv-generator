@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from mirustech.devenv_generator.generator import get_bundled_profile
 from mirustech.devenv_generator.models import (
+    DotfilesConfig,
     ImageSpec,
     MountsConfig,
     MountSpec,
@@ -95,6 +96,31 @@ class TestNetworkConfig:
         domains = config.effective_allowed_domains
         # Property works regardless of mode
         assert "api.anthropic.com" in domains
+
+
+class TestDotfilesConfig:
+    """Tests for DotfilesConfig model."""
+
+    def test_defaults(self) -> None:
+        """DotfilesConfig validates with defaults (empty = disabled)."""
+        config = DotfilesConfig()
+        assert config.chezmoi_repo == ""
+        assert config.chezmoi_age_key is False
+
+    def test_with_repo_set(self) -> None:
+        """DotfilesConfig validates with repo set."""
+        config = DotfilesConfig(chezmoi_repo="https://github.com/user/dotfiles")
+        assert config.chezmoi_repo == "https://github.com/user/dotfiles"
+        assert config.chezmoi_age_key is False
+
+    def test_with_age_key_enabled(self) -> None:
+        """DotfilesConfig validates with age key enabled."""
+        config = DotfilesConfig(
+            chezmoi_repo="https://github.com/user/dotfiles",
+            chezmoi_age_key=True,
+        )
+        assert config.chezmoi_repo == "https://github.com/user/dotfiles"
+        assert config.chezmoi_age_key is True
 
 
 class TestMountsConfig:

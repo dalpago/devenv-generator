@@ -198,6 +198,12 @@ RUN starship preset {{ profile.shell.starship_preset }} -o ~/.config/starship.to
 RUN echo 'eval "$(starship init zsh)"' >> ~/.zshrc
 {% endif %}
 
+{% if profile.dotfiles.chezmoi_repo %}
+# chezmoi: config-only dotfiles sync (--exclude=scripts skips install scripts).
+# Dockerfile handles package installation; chezmoi handles user configuration.
+RUN sh -c "$(curl -fsLS get.chezmoi.io)"
+{% endif %}
+
 {% if 'tmux' in profile.system_packages %}
 # Install oh-my-tmux for the user
 RUN set -e; \

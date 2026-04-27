@@ -30,6 +30,8 @@ services:
         DOCKER_GID: {{ docker_gid }}
 {% endif %}
     volumes:
+      # Persistent Claude configuration (survives container restarts and image rebuilds)
+      - claude-config:/home/developer/.claude
 {% if use_host_claude_config %}
       # Host Claude config mounted read-only (for CLAUDE.md, MCP servers)
       # Settings are NOT inherited - sandbox uses permissive defaults
@@ -54,6 +56,11 @@ services:
 {% if profile.mounts.happy_config %}
       # Happy Coder mobile client config (read-only, copied at runtime)
       - ~/.happy:/home/developer/.happy-host:ro
+{% endif %}
+{% if profile.dotfiles.chezmoi_age_key %}
+      # chezmoi_age_key: age key is host-local (not in dotfiles repo for security);
+      # read-only mount makes SOPS-encrypted dotfiles decryptable without copying the key.
+      - ~/.config/chezmoi/key.txt:/home/developer/.config/chezmoi/key.txt:ro
 {% endif %}
 {% for mount in mounts %}
 {% if mount.mode == 'ro' %}
@@ -137,3 +144,7 @@ services:
     cap_add:
       - NET_ADMIN
 {% endif %}
+
+volumes:
+  claude-config:
+    name: devenv-{{ sandbox_name }}-claude-config
