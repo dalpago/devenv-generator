@@ -156,80 +156,21 @@ def help_command() -> None:
 @main.command("completions")
 @click.argument("shell", type=click.Choice(["bash", "zsh", "fish"]))
 def completions(shell: str) -> None:
-    """Generate shell completion script."""
-    env_var = "_DEVENV_COMPLETE"
+    """Generate shell completion script.
 
-    if shell == "bash":
-        script = f"""
-_devenv_completion() {{
-    local IFS=$'\\n'
-    COMPREPLY=( $( env COMP_WORDS="${{COMP_WORDS[*]}}" \\
-                   COMP_CWORD=$COMP_CWORD \\
-                   {env_var}=bash_complete $1 ) )
-    return 0
-}}
+    Add to your shell config:
+      # bash (~/.bashrc)
+      eval "$(devenv completions bash)"
+      # zsh (~/.zshrc)
+      eval "$(devenv completions zsh)"
+      # fish (~/.config/fish/config.fish)
+      devenv completions fish | source
+    """
+    from click.shell_completion import BashComplete, FishComplete, ZshComplete
 
-complete -F _devenv_completion -o default devenv
-"""
-    elif shell == "zsh":
-        script = """
-#compdef devenv
-
-_devenv() {
-    local state
-    _arguments -C \\
-        '1: :->command' \\
-        '*: :->args'
-    case $state in
-        command)
-            local commands=(
-                'run:Run a sandbox for the given project paths'
-                'attach:Attach to a running sandbox'
-                'stop:Stop a running sandbox'
-                'start:Start a stopped sandbox'
-                'rm:Remove a sandbox'
-                'status:List all sandboxes and their status'
-                'clean:Clean up unused sandboxes and images'
-                'new:Create a new project with devcontainer'
-                'profiles:Manage profiles'
-                'config:Manage configuration'
-            )
-            _describe 'command' commands
-            ;;
-    esac
-}
-
-compdef _devenv devenv
-"""
-    elif shell == "fish":
-        script = """
-function __fish_devenv_sandbox_names
-    set -l sandboxes_dir "$HOME/.local/share/devenv-sandboxes"
-    if test -d "$sandboxes_dir"
-        ls -1 "$sandboxes_dir" 2>/dev/null
-    end
-end
-
-complete -c devenv -f
-complete -c devenv -n "__fish_use_subcommand" -a "run" -d "Run a sandbox"
-complete -c devenv -n "__fish_use_subcommand" -a "attach" -d "Attach to sandbox"
-complete -c devenv -n "__fish_use_subcommand" -a "stop" -d "Stop sandbox"
-complete -c devenv -n "__fish_use_subcommand" -a "start" -d "Start a sandbox"
-complete -c devenv -n "__fish_use_subcommand" -a "rm" -d "Remove a sandbox"
-complete -c devenv -n "__fish_use_subcommand" -a "status" -d "List sandboxes"
-complete -c devenv -n "__fish_use_subcommand" -a "clean" -d "Clean up sandboxes"
-complete -c devenv -n "__fish_use_subcommand" -a "cd" -d "Change to sandbox directory"
-complete -c devenv -n "__fish_use_subcommand" -a "new" -d "Create new project"
-complete -c devenv -n "__fish_use_subcommand" -a "profiles" -d "Manage profiles"
-complete -c devenv -n "__fish_use_subcommand" -a "config" -d "Manage configuration"
-complete -c devenv -n "__fish_seen_subcommand_from attach stop start rm cd" \\
-    -a "(__fish_devenv_sandbox_names)"
-"""
-    else:
-        console.print(f"[red]Unsupported shell: {shell}[/red]")
-        raise SystemExit(1)
-
-    click.echo(script.strip())
+    cls_map = {"bash": BashComplete, "zsh": ZshComplete, "fish": FishComplete}
+    comp = cls_map[shell](main, {}, "devenv", "_DEVENV_COMPLETE")
+    click.echo(comp.source())
 
 
 @main.command("new")

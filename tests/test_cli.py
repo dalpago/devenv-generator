@@ -67,7 +67,7 @@ class TestCompletionsCommand:
 
         assert result.exit_code == 0
         assert "_devenv_completion" in result.output
-        assert "complete -F" in result.output
+        assert "_DEVENV_COMPLETE=bash_complete" in result.output
 
     def test_zsh_completions(self, runner: CliRunner) -> None:
         """Should generate zsh completion script."""
@@ -75,16 +75,15 @@ class TestCompletionsCommand:
 
         assert result.exit_code == 0
         assert "#compdef devenv" in result.output
-        assert "_devenv()" in result.output
-        assert "compdef _devenv devenv" in result.output
+        assert "_devenv_completion" in result.output
 
     def test_fish_completions(self, runner: CliRunner) -> None:
         """Should generate fish completion script."""
         result = runner.invoke(main, ["completions", "fish"])
 
         assert result.exit_code == 0
-        assert "__fish_devenv_sandbox_names" in result.output
-        assert "complete -c devenv" in result.output
+        assert "_devenv_completion" in result.output
+        assert "_DEVENV_COMPLETE=fish_complete" in result.output
 
     def test_invalid_shell(self, runner: CliRunner) -> None:
         """Should reject invalid shell names."""
