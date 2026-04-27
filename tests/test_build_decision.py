@@ -230,20 +230,15 @@ class TestBuildDecisionUseCase:
 
         with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
              patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"), \
+             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator, \
              patch("mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase") as mock_use_case:
             # Image exists locally
             mock_run.return_value = Mock(stdout="image-id-123")
             mock_hash.return_value = "abc123"
 
-            # Registry pull succeeds
+            # try_pull succeeds
             mock_instance = mock_use_case.return_value
-            mock_instance.execute.return_value = BuildOrPullResult(
-                image_spec=image_spec,
-                pulled=True,
-                built=False,
-                pushed=False,
-            )
+            mock_instance.try_pull.return_value = image_spec
 
             result = use_case.execute(
                 sandbox_name="test-sandbox",
@@ -259,8 +254,10 @@ class TestBuildDecisionUseCase:
 
             assert result.skip_build is True
             assert result.image_spec == image_spec
-            # Verify BuildOrPullImageUseCase was called
-            mock_instance.execute.assert_called_once()
+            # try_pull was called, generate was called once, build_only was NOT called
+            mock_instance.try_pull.assert_called_once()
+            mock_generator.return_value.generate.assert_called_once_with(sandbox_dir)
+            mock_instance.build_only.assert_not_called()
 
     def test_registry_pull_fail_falls_back_to_build(
         self, mock_profile, mount_specs, sandbox_dir, registry_config
@@ -270,20 +267,22 @@ class TestBuildDecisionUseCase:
 
         with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
              patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"), \
+             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator, \
              patch("mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase") as mock_use_case:
             # No image exists
             mock_run.return_value = Mock(stdout="")
             mock_hash.return_value = "abc123"
 
-            # Registry pull fails
+            # try_pull returns None (pull failed)
             mock_instance = mock_use_case.return_value
-            mock_instance.execute.return_value = BuildOrPullResult(
+            mock_instance.try_pull.return_value = None
+            # build_only also fails to produce an image
+            mock_instance.build_only.return_value = BuildOrPullResult(
                 image_spec=None,
                 pulled=False,
                 built=False,
                 pushed=False,
-                error="Pull failed",
+                error="Build failed",
             )
 
             result = use_case.execute(
@@ -301,6 +300,10 @@ class TestBuildDecisionUseCase:
             # Should not skip build
             assert result.skip_build is False
             assert result.image_spec is None
+            # try_pull was called, generate was called once, build_only was called
+            mock_instance.try_pull.assert_called_once()
+            mock_generator.return_value.generate.assert_called_once_with(sandbox_dir)
+            mock_instance.build_only.assert_called_once()
 
     def test_registry_disabled_by_flag(
         self, mock_profile, mount_specs, sandbox_dir, registry_config
@@ -335,7 +338,7 @@ class TestBuildDecisionUseCase:
             # Should skip build (image exists, config unchanged)
             assert result.skip_build is True
             # BuildOrPullImageUseCase should not be called
-            mock_use_case.return_value.execute.assert_not_called()
+            mock_use_case.return_value.try_pull.assert_not_called()
 
     def test_generator_called_with_correct_parameters(
         self, mock_profile, mount_specs, sandbox_dir

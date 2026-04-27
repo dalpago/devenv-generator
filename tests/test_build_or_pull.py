@@ -408,6 +408,266 @@ class TestBuildOrPullImageUseCase:
         assert result.pushed is False  # No push if tag failed
 
 
+class TestTryPull:
+    """Tests for BuildOrPullImageUseCase.try_pull()."""
+
+    @pytest.fixture
+    def mock_registry_client(self) -> MagicMock:
+        """Create a mock registry client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def mock_git_client(self) -> MagicMock:
+        """Create a mock git client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def registry_config(self) -> RegistryConfig:
+        """Create a test registry config."""
+        return RegistryConfig(
+            enabled=True,
+            url="registry.example.com",
+        )
+
+    def test_try_pull_auth_fails_returns_none(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that auth failure returns None without attempting pull."""
+        mock_git_client.is_git_repository.return_value = False
+        mock_registry_client.authenticate.return_value = False
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        result = use_case.try_pull(
+            project_path=tmp_path,
+            project_name="test-project",
+            registry_config=registry_config,
+        )
+
+        assert result is None
+        mock_registry_client.pull_image.assert_not_called()
+
+    def test_try_pull_success_returns_image_spec(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that successful pull returns image spec."""
+        mock_git_client.is_git_repository.return_value = True
+        mock_git_client.get_commit_sha.return_value = "abc123def456789012345678901234567890abcd"
+        mock_registry_client.authenticate.return_value = True
+        mock_registry_client.pull_image.return_value = True
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        result = use_case.try_pull(
+            project_path=tmp_path,
+            project_name="test-project",
+            registry_config=registry_config,
+        )
+
+        assert result is not None
+        assert result.project == "test-project"
+        assert result.registry == registry_config.url
+
+    def test_try_pull_image_not_found_returns_none(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that pull failure returns None."""
+        mock_git_client.is_git_repository.return_value = False
+        mock_registry_client.authenticate.return_value = True
+        mock_registry_client.pull_image.return_value = False
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        result = use_case.try_pull(
+            project_path=tmp_path,
+            project_name="test-project",
+            registry_config=registry_config,
+        )
+
+        assert result is None
+
+
+class TestBuildOnly:
+    """Tests for BuildOrPullImageUseCase.build_only()."""
+
+    @pytest.fixture
+    def mock_registry_client(self) -> MagicMock:
+        """Create a mock registry client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def mock_git_client(self) -> MagicMock:
+        """Create a mock git client."""
+        return MagicMock()
+
+    @pytest.fixture
+    def registry_config(self) -> RegistryConfig:
+        """Create a test registry config."""
+        return RegistryConfig(
+            enabled=True,
+            url="registry.example.com",
+        )
+
+    def test_build_only_no_auto_push_skips_auth(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that build_only skips auth when auto_push is False."""
+        mock_git_client.is_git_repository.return_value = False
+        mock_registry_client.tag_image.return_value = True
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            use_case.build_only(
+                project_path=tmp_path,
+                project_name="test-project",
+                registry_config=registry_config,
+                sandbox_dir=sandbox_dir,
+                sandbox_name="test-sandbox",
+                auto_push=False,
+            )
+
+        mock_registry_client.authenticate.assert_not_called()
+
+    def test_build_only_auto_push_authenticates(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that build_only authenticates when auto_push is True."""
+        mock_git_client.is_git_repository.return_value = False
+        mock_registry_client.tag_image.return_value = True
+        mock_registry_client.push_image.return_value = True
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            use_case.build_only(
+                project_path=tmp_path,
+                project_name="test-project",
+                registry_config=registry_config,
+                sandbox_dir=sandbox_dir,
+                sandbox_name="test-sandbox",
+                auto_push=True,
+            )
+
+        mock_registry_client.authenticate.assert_called_once_with(
+            registry_config.url, registry_config
+        )
+
+    def test_build_only_returns_build_result(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that build_only returns a BuildOrPullResult with built=True."""
+        mock_git_client.is_git_repository.return_value = False
+        mock_registry_client.tag_image.return_value = True
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            result = use_case.build_only(
+                project_path=tmp_path,
+                project_name="test-project",
+                registry_config=registry_config,
+                sandbox_dir=sandbox_dir,
+                sandbox_name="test-sandbox",
+                auto_push=False,
+            )
+
+        assert result.built is True
+        assert result.pulled is False
+        assert result.image_spec is not None
+
+    def test_build_only_build_failure_returns_error_result(
+        self,
+        mock_registry_client: MagicMock,
+        mock_git_client: MagicMock,
+        registry_config: RegistryConfig,
+        tmp_path: Path,
+    ) -> None:
+        """Test that build_only propagates build failure."""
+        mock_git_client.is_git_repository.return_value = False
+
+        use_case = BuildOrPullImageUseCase(
+            registry_client=mock_registry_client,
+            git_client=mock_git_client,
+        )
+
+        sandbox_dir = tmp_path / "sandbox"
+        sandbox_dir.mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+
+            result = use_case.build_only(
+                project_path=tmp_path,
+                project_name="test-project",
+                registry_config=registry_config,
+                sandbox_dir=sandbox_dir,
+                sandbox_name="test-sandbox",
+                auto_push=False,
+            )
+
+        assert result.built is False
+        assert result.error == "Build failed"
+        assert result.image_spec is None
+
+
 class TestBuildOrPullImageFunction:
     """Tests for the convenience function."""
 

@@ -101,37 +101,38 @@ class BuildDecisionUseCase:
             use_case = BuildOrPullImageUseCase()
             auto_push = push_to_registry or registry_config.auto_push
 
-            # Generate sandbox with initial configuration
+            # Try pull first — no generated files needed
+            image_spec = use_case.try_pull(
+                project_path=mount_specs[0].host_path,
+                project_name=sandbox_name,
+                registry_config=registry_config,
+            )
+            if image_spec:
+                skip_build = True
+
+            # Generate once with final image_spec (None if pull failed, set if succeeded)
             generator = SandboxGenerator(
                 profile=config,
                 mounts=mount_specs,
                 sandbox_name=sandbox_name,
                 use_host_claude_config=not no_host_config,
+                image_spec=image_spec,
             )
             generator.generate(sandbox_dir)
 
-            # Attempt pull from registry
-            result = use_case.execute(
-                project_path=mount_specs[0].host_path,
-                project_name=sandbox_name,
-                registry_config=registry_config,
-                sandbox_dir=sandbox_dir,
-                sandbox_name=sandbox_name,
-                auto_push=auto_push,
-            )
-
-            # If pull succeeded, regenerate with image spec
-            if result.image_spec:
-                image_spec = result.image_spec
-                skip_build = True
-                generator = SandboxGenerator(
-                    profile=config,
-                    mounts=mount_specs,
+            # If pull failed, build locally (no redundant pull attempt)
+            if not skip_build:
+                result = use_case.build_only(
+                    project_path=mount_specs[0].host_path,
+                    project_name=sandbox_name,
+                    registry_config=registry_config,
+                    sandbox_dir=sandbox_dir,
                     sandbox_name=sandbox_name,
-                    use_host_claude_config=not no_host_config,
-                    image_spec=image_spec,
+                    auto_push=auto_push,
                 )
-                generator.generate(sandbox_dir)
+                if result.image_spec:
+                    image_spec = result.image_spec
+                    skip_build = True
         else:
             # No registry, just generate with default configuration
             generator = SandboxGenerator(

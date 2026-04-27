@@ -119,6 +119,62 @@ class BuildOrPullImageUseCase:
         console.print("[dim]Image not found in registry, building locally...[/dim]")
         return self._build_locally(image_spec, sandbox_dir, sandbox_name, auto_push)
 
+    def try_pull(
+        self,
+        project_path: Path,
+        project_name: str,
+        registry_config: RegistryConfig,
+    ) -> ImageSpec | None:
+        """Attempt registry pull without fallback to build.
+
+        Args:
+            project_path: Path to the project (for git SHA detection).
+            project_name: Name of the project.
+            registry_config: Registry configuration.
+
+        Returns:
+            ImageSpec if pull succeeded, None otherwise.
+        """
+        tag = self._get_tag(project_path)
+        sanitized_name = sanitize_project_name(project_name)
+        image_spec = ImageSpec(registry=registry_config.url, project=sanitized_name, tag=tag)
+        if not self.registry_client.authenticate(registry_config.url, registry_config):
+            return None
+        console.print(f"[dim]Pulling from registry: {image_spec.full_name}[/dim]")
+        if self.registry_client.pull_image(image_spec):
+            console.print(f"[green]✓ Using cached image:[/green] {image_spec.full_name}")
+            return image_spec
+        return None
+
+    def build_only(
+        self,
+        project_path: Path,
+        project_name: str,
+        registry_config: RegistryConfig,
+        sandbox_dir: Path,
+        sandbox_name: str,
+        auto_push: bool = False,
+    ) -> BuildOrPullResult:
+        """Build locally and optionally push. Skips pull attempt.
+
+        Args:
+            project_path: Path to the project (for git SHA detection).
+            project_name: Name of the project.
+            registry_config: Registry configuration.
+            sandbox_dir: Directory containing docker-compose.yml.
+            sandbox_name: Name of the sandbox (used for docker compose).
+            auto_push: Whether to push after building.
+
+        Returns:
+            BuildOrPullResult with image spec and operation status.
+        """
+        tag = self._get_tag(project_path)
+        sanitized_name = sanitize_project_name(project_name)
+        image_spec = ImageSpec(registry=registry_config.url, project=sanitized_name, tag=tag)
+        if auto_push:
+            self.registry_client.authenticate(registry_config.url, registry_config)
+        return self._build_locally(image_spec, sandbox_dir, sandbox_name, auto_push)
+
     def _get_tag(self, project_path: Path) -> str:
         """Get the tag for the image.
 
