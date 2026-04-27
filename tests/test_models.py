@@ -7,6 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from mirustech.devenv_generator.generator import get_bundled_profile
 from mirustech.devenv_generator.models import (
     ImageSpec,
     MountsConfig,
@@ -116,17 +117,13 @@ class TestProfileConfig:
         assert config.name == "test"
         assert config.python.version == "3.12"
 
-    def test_default_uvx_tools(self) -> None:
-        """Default uvx tools should include standard dev tools."""
-        config = ProfileConfig(name="test")
-        assert "pre-commit" in config.uvx_tools
-        assert "ruff" in config.uvx_tools
-        assert "mypy" in config.uvx_tools
-
-    def test_default_node_packages(self) -> None:
-        """Default node packages should include Claude Code."""
-        config = ProfileConfig(name="test")
-        assert "@anthropic-ai/claude-code" in config.node_packages
+    def test_package_fields_empty_without_yaml(self) -> None:
+        """Package fields are empty when constructed without YAML."""
+        config = ProfileConfig(name="x")
+        assert config.uvx_tools == []
+        assert config.system_packages == []
+        assert config.node_packages == []
+        assert config.github_releases == {}
 
     def test_full_profile(self) -> None:
         """Full profile with all options should work."""
@@ -158,6 +155,41 @@ class TestProfileConfig:
         )
         assert len(config.ports.ports) == 1
         assert config.ports.ports[0].description == "API"
+
+
+class TestBundledProfiles:
+    """Tests for bundled YAML profiles loaded via get_bundled_profile."""
+
+    def test_default_yaml_loads_successfully(self) -> None:
+        """default.yaml should load and parse without errors."""
+        config = get_bundled_profile("default")
+        assert config.name == "default"
+
+    def test_default_yaml_system_packages(self) -> None:
+        """default.yaml system_packages should include expected tools."""
+        config = get_bundled_profile("default")
+        assert "eza" in config.system_packages
+        assert "fzf" in config.system_packages
+        assert "age" in config.system_packages
+        assert "sqlite3" in config.system_packages
+        assert "htop" in config.system_packages
+
+    def test_default_yaml_github_releases_includes_bat(self) -> None:
+        """default.yaml github_releases should still include bat."""
+        config = get_bundled_profile("default")
+        assert "bat" in config.github_releases
+
+    def test_minimal_yaml_loads_successfully(self) -> None:
+        """minimal.yaml should load and parse without errors."""
+        config = get_bundled_profile("minimal")
+        assert config.name == "minimal"
+
+    def test_minimal_yaml_sparse_packages(self) -> None:
+        """minimal.yaml has a sparse package list."""
+        config = get_bundled_profile("minimal")
+        assert config.uvx_tools == []
+        assert config.node_packages == []
+        assert config.github_releases == {}
 
 
 class TestPortConfig:

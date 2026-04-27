@@ -1,4 +1,11 @@
-"""Pydantic models for devenv-generator configuration."""
+"""Pydantic models for devenv-generator configuration.
+
+Package list fields (uvx_tools, system_packages, node_packages, github_releases)
+carry no defaults — all real defaults live in profiles/default.yaml.
+ProfileConfig(name=...) without YAML produces an empty-package environment,
+making misconfiguration visible immediately rather than silently using stale
+Python-side defaults that diverge from the YAML source of truth.
+"""
 
 import re
 from dataclasses import dataclass
@@ -129,44 +136,19 @@ class ProfileConfig(BaseModel):
     python: PythonConfig = Field(default_factory=PythonConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     uvx_tools: list[str] = Field(
-        default_factory=lambda: ["pre-commit", "ruff", "deptry", "mypy", "httpie"],
+        default_factory=list,  # default.yaml is sole source of truth for package lists
         description="Python tools to install globally via uvx",
     )
     system_packages: list[str] = Field(
-        default_factory=lambda: [
-            "git",
-            "curl",
-            "wget",
-            "vim",
-            "zsh",
-            "make",
-            "build-essential",
-            "ripgrep",
-            "fd-find",
-            "jq",
-            "tree",
-            "less",
-            "htop",
-            "tmux",
-            "bat",
-            "git-extras",
-            "parallel",
-            "yq",
-            "eza",
-            "fzf",
-            "age",
-            "sqlite3",
-        ],
+        default_factory=list,  # default.yaml is sole source of truth for package lists
         description="System packages to install via apt",
     )
     node_packages: list[str] = Field(
-        default_factory=lambda: ["@anthropic-ai/claude-code", "happy-coder"],
+        default_factory=list,  # default.yaml is sole source of truth for package lists
         description="Node.js packages to install globally via npm",
     )
     github_releases: dict[str, str] = Field(
-        default_factory=lambda: {
-            "delta": "https://github.com/dandavison/delta/releases/download/0.18.2/git-delta_0.18.2_amd64.deb",
-        },
+        default_factory=dict,  # default.yaml is sole source of truth for package lists
         description="Tools to install from GitHub releases (name -> URL)",
     )
     environment: dict[str, str] = Field(

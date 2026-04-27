@@ -141,11 +141,16 @@ class TestDevEnvGenerator:
         assert "# Profile: test" in content
         assert "uv" in content  # Should install uv
 
-    def test_render_dockerfile_zsh(self, generator: DevEnvGenerator) -> None:
+    def test_render_dockerfile_zsh(self) -> None:
         """Should configure zsh if in system packages."""
-        content = generator.render_dockerfile()
+        profile = ProfileConfig(
+            name="test",
+            description="Test profile",
+            python=PythonConfig(version="3.12"),
+            system_packages=["zsh"],
+        )
+        content = DevEnvGenerator(profile, project_name="test-project").render_dockerfile()
 
-        # Default profile includes zsh
         assert "zsh" in content
         # Should set zsh as default shell via env var and user shell
         assert "SHELL=/bin/zsh" in content

@@ -32,6 +32,7 @@ uvx_tools:
   - ruff
   - deptry
   - mypy
+  - httpie
 
 system_packages:
   # Version control
@@ -56,6 +57,11 @@ system_packages:
   - jq
   - tree
   - less
+  - htop
+  - eza
+  - fzf
+  - age
+  - sqlite3
   # Clipboard
   - xclip
   # GPG for commit signing
@@ -71,8 +77,7 @@ node_packages:
   - "@anthropic-ai/claude-code"
   - "happy-coder"
 
-environment:
-  HAPPY_SERVER_URL: "https://happy.ziefle.org"
+environment: {}
 
 mcp:
   enable_serena: true
