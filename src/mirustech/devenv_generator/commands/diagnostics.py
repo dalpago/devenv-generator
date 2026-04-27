@@ -20,6 +20,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import rich_click as click
@@ -33,6 +34,19 @@ from mirustech.devenv_generator.utils.subprocess import run_command, wait_with_e
 
 console = Console()
 logger = structlog.get_logger()
+
+_SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
+
+
+@dataclass
+class CheckMetadata:
+    """Metadata for a registered diagnostic check."""
+
+    name: str
+    display_name: str
+    severity: str  # "critical" | "warning" | "info"
+    fix_name: str | None = None
+    conditional: bool = False  # e.g., container_health only with --container
 
 
 class DiagnosticRegistry:
@@ -50,26 +64,48 @@ class DiagnosticRegistry:
         """Initialize registry with empty check and fix dictionaries."""
         self._checks: dict[str, Callable[[], tuple[bool, str]]] = {}
         self._fixes: dict[str, Callable[[], tuple[bool, str]]] = {}
+        self._metadata: dict[str, CheckMetadata] = {}
+        self._registration_order: list[str] = []
 
     def check(
-        self, name: str
+        self,
+        name: str,
+        severity: str = "info",
+        display_name: str = "",
+        fix_name: str | None = None,
+        conditional: bool = False,
     ) -> Callable[[Callable[[], tuple[bool, str]]], Callable[[], tuple[bool, str]]]:
         """Decorator to register a check function.
 
         Args:
             name: Identifier for this check (used in doctor output table).
+            severity: Severity level — "critical", "warning", or "info".
+            display_name: Human-readable label shown in doctor output.
+            fix_name: Name of a registered fix function to run on failure.
+            conditional: If True, check is skipped unless explicitly requested.
 
         Returns:
             Decorator function that registers and returns the check function.
 
         Example:
-            @diagnostic.check("docker_installed")
+            @diagnostic.check("docker_installed", severity="critical",
+                               display_name="Docker installed")
             def check_docker_installed() -> tuple[bool, str]:
                 # Returns (True, "Docker 20.10.7") or (False, "Not found")
         """
 
         def decorator(func: Callable[[], tuple[bool, str]]) -> Callable[[], tuple[bool, str]]:
             self._checks[name] = func
+            meta = CheckMetadata(
+                name=name,
+                display_name=display_name or name,
+                severity=severity,
+                fix_name=fix_name,
+                conditional=conditional,
+            )
+            self._metadata[name] = meta
+            if name not in self._registration_order:
+                self._registration_order.append(name)
             return func
 
         return decorator
@@ -96,6 +132,24 @@ class DiagnosticRegistry:
             return func
 
         return decorator
+
+    def get_ordered_checks(self) -> list[CheckMetadata]:
+        """Return checks grouped by severity, preserving registration order within each group.
+
+        Returns checks in severity order: critical first, then warning, then info.
+        Conditional checks appear last within their severity group.
+        """
+        by_severity: dict[str, list[CheckMetadata]] = {"critical": [], "warning": [], "info": []}
+        for name in self._registration_order:
+            meta = self._metadata[name]
+            severity = meta.severity if meta.severity in by_severity else "info"
+            by_severity[severity].append(meta)
+
+        return by_severity["critical"] + by_severity["warning"] + by_severity["info"]
+
+    def get_fix(self, name: str) -> Callable[[], tuple[bool, str]] | None:
+        """Return the fix function registered under name, or None if not found."""
+        return self._fixes.get(name)
 
     def run_all_checks(self) -> list[tuple[str, bool, str]]:
         """Run all registered checks.
@@ -139,7 +193,7 @@ class DiagnosticRegistry:
 diagnostic = DiagnosticRegistry()
 
 
-@diagnostic.check("docker_installed")
+@diagnostic.check("docker_installed", severity="critical", display_name="Docker installed")
 def check_docker_installed() -> tuple[bool, str]:
     """Check if Docker is installed."""
     result = run_command(["docker", "--version"])
@@ -149,7 +203,9 @@ def check_docker_installed() -> tuple[bool, str]:
     return False, "Docker not found in PATH"
 
 
-@diagnostic.check("docker_running")
+@diagnostic.check(
+    "docker_running", severity="critical", display_name="Docker running", fix_name="docker_running"
+)
 def check_docker_running() -> tuple[bool, str]:
     """Check if Docker daemon is running."""
     result = run_command(["docker", "info"])
@@ -158,7 +214,20 @@ def check_docker_running() -> tuple[bool, str]:
     return False, "Docker daemon not running. Try: docker desktop or sudo systemctl start docker"
 
 
-@diagnostic.check("docker_compose")
+@diagnostic.check("docker_socket", severity="critical", display_name="Docker socket")
+def check_docker_socket() -> tuple[bool, str]:
+    """Check if Docker socket is accessible."""
+    socket_path = Path("/var/run/docker.sock")
+    if not socket_path.exists():
+        return False, "Docker socket not found at /var/run/docker.sock"
+
+    if not os.access(socket_path, os.R_OK | os.W_OK):
+        return False, "Docker socket not accessible (check permissions)"
+
+    return True, "Docker socket accessible"
+
+
+@diagnostic.check("docker_compose", severity="critical", display_name="Docker Compose")
 def check_docker_compose() -> tuple[bool, str]:
     """Check if Docker Compose is available."""
     result = run_command(["docker", "compose", "version"])
@@ -174,25 +243,12 @@ def check_docker_compose() -> tuple[bool, str]:
     return False, "Docker Compose not found"
 
 
-@diagnostic.check("disk_space")
-def check_disk_space() -> tuple[bool, str]:
-    """Check available disk space."""
-    sandboxes_dir = SANDBOXES_DIR
-    if not sandboxes_dir.exists():
-        sandboxes_dir.mkdir(parents=True, exist_ok=True)
-
-    stat = os.statvfs(sandboxes_dir)
-    available_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
-
-    if available_gb < 1:
-        return False, f"Low disk space: {available_gb:.1f}GB available (recommend 5GB+)"
-    elif available_gb < 5:
-        return True, f"Disk space adequate: {available_gb:.1f}GB available (recommend 5GB+)"
-    else:
-        return True, f"Disk space good: {available_gb:.1f}GB available"
-
-
-@diagnostic.check("claude_auth")
+@diagnostic.check(
+    "claude_auth",
+    severity="critical",
+    display_name="Claude authentication",
+    fix_name="claude_auth",
+)
 def check_claude_auth() -> tuple[bool, str]:
     """Check if Claude authentication is configured."""
     oauth_token = os.getenv("CLAUDE_CODE_OAUTH_TOKEN")
@@ -210,7 +266,9 @@ def check_claude_auth() -> tuple[bool, str]:
     return False, "No Claude authentication found. Run: claude login"
 
 
-@diagnostic.check("claude_dir")
+@diagnostic.check(
+    "claude_dir", severity="warning", display_name="~/.claude directory", fix_name="claude_dir"
+)
 def check_claude_dir() -> tuple[bool, str]:
     """Check if ~/.claude directory exists and is accessible."""
     claude_dir = Path.home() / ".claude"
@@ -223,7 +281,59 @@ def check_claude_dir() -> tuple[bool, str]:
     return True, "~/.claude directory exists and is accessible"
 
 
-@diagnostic.check("happy_config")
+@diagnostic.check(
+    "disk_space", severity="warning", display_name="Disk space", fix_name="disk_space"
+)
+def check_disk_space() -> tuple[bool, str]:
+    """Check available disk space."""
+    sandboxes_dir = SANDBOXES_DIR
+    if not sandboxes_dir.exists():
+        sandboxes_dir.mkdir(parents=True, exist_ok=True)
+
+    stat = os.statvfs(sandboxes_dir)
+    available_gb = (stat.f_bavail * stat.f_frsize) / (1024**3)
+
+    if available_gb < 1:
+        return False, f"Low disk space: {available_gb:.1f}GB available (recommend 5GB+)"
+    elif available_gb < 5:
+        return True, f"Disk space adequate: {available_gb:.1f}GB available (recommend 5GB+)"
+    else:
+        return True, f"Disk space good: {available_gb:.1f}GB available"
+
+
+@diagnostic.check("profile_valid", severity="warning", display_name="Default profile valid")
+def check_profile_valid() -> tuple[bool, str]:
+    """Check if the default profile is valid."""
+    try:
+        config = get_bundled_profile("default")
+        return True, f"Default profile 'default' is valid (Python {config.python.version})"
+    except Exception as e:
+        return False, f"Default profile invalid: {e}"
+
+
+@diagnostic.check("npm_installed", severity="info", display_name="npm installed")
+def check_npm_installed() -> tuple[bool, str]:
+    """Check if npm is installed (needed for building containers)."""
+    result = run_command(["npm", "--version"])
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"npm installed: v{version}"
+    return False, "npm not found (needed for container builds)"
+
+
+@diagnostic.check("git_installed", severity="info", display_name="Git installed")
+def check_git_installed() -> tuple[bool, str]:
+    """Check if git is installed."""
+    result = run_command(["git", "--version"])
+    if result.returncode == 0:
+        version = result.stdout.strip()
+        return True, f"Git installed: {version}"
+    return False, "Git not found (recommended for devenv workflows)"
+
+
+@diagnostic.check(
+    "happy_config", severity="info", display_name="Happy Coder config", fix_name="happy_dir"
+)
 def check_happy_config() -> tuple[bool, str]:
     """Check if Happy Coder config exists."""
     happy_dir = Path.home() / ".happy"
@@ -240,49 +350,42 @@ def check_happy_config() -> tuple[bool, str]:
     return True, "~/.happy directory exists (no access key)"
 
 
-@diagnostic.check("npm_installed")
-def check_npm_installed() -> tuple[bool, str]:
-    """Check if npm is installed (needed for building containers)."""
-    result = run_command(["npm", "--version"])
-    if result.returncode == 0:
-        version = result.stdout.strip()
-        return True, f"npm installed: v{version}"
-    return False, "npm not found (needed for container builds)"
+@diagnostic.check("mcp_servers", severity="info", display_name="MCP servers")
+def check_mcp_servers() -> tuple[bool, str]:
+    """Check if MCP servers are configured."""
+    claude_json = Path.home() / ".claude.json"
+    if not claude_json.exists():
+        return True, "No MCP servers configured (optional)"
+
+    try:
+        import json
+
+        with open(claude_json) as f:
+            data = json.load(f)
+
+        servers = data.get("mcpServers", {})
+        if not servers:
+            return True, "No MCP servers configured (optional)"
+
+        server_names = ", ".join(servers.keys())
+        return True, f"MCP servers configured: {server_names}"
+    except Exception as e:
+        return False, f"Error reading MCP server config: {e}"
 
 
-@diagnostic.check("git_installed")
-def check_git_installed() -> tuple[bool, str]:
-    """Check if git is installed."""
-    result = run_command(["git", "--version"])
-    if result.returncode == 0:
-        version = result.stdout.strip()
-        return True, f"Git installed: {version}"
-    return False, "Git not found (recommended for devenv workflows)"
-
-
-@diagnostic.check("gpg_port")
+@diagnostic.check("gpg_port", severity="info", display_name="GPG port (9876)")
 def check_gpg_port() -> tuple[bool, str]:
     """Check if GPG forwarding port is available."""
     return _check_port_available(9876, "GPG agent forwarding")
 
 
-@diagnostic.check("serena_port")
+@diagnostic.check("serena_port", severity="info", display_name="Serena port (9121)")
 def check_serena_port() -> tuple[bool, str]:
     """Check if Serena MCP server port is available."""
     return _check_port_available(9121, "Serena MCP HTTP mode")
 
 
-@diagnostic.check("profile_valid")
-def check_profile_valid() -> tuple[bool, str]:
-    """Check if the default profile is valid."""
-    try:
-        config = get_bundled_profile("default")
-        return True, f"Default profile 'default' is valid (Python {config.python.version})"
-    except Exception as e:
-        return False, f"Default profile invalid: {e}"
-
-
-@diagnostic.check("registry_connectivity")
+@diagnostic.check("registry_connectivity", severity="info", display_name="Registry connectivity")
 def check_registry_connectivity() -> tuple[bool, str]:
     """Check if registry is configured and accessible."""
     try:
@@ -307,7 +410,9 @@ def check_registry_connectivity() -> tuple[bool, str]:
         return False, f"Error checking registry: {e}"
 
 
-@diagnostic.check("container_health")
+@diagnostic.check(
+    "container_health", severity="warning", display_name="Container health", conditional=True
+)
 def check_container_health() -> tuple[bool, str]:
     """Check if a container can be created and runs successfully."""
     result = run_command(["docker", "ps", "--filter", "name=devenv", "--format", "{{.Names}}"])
@@ -348,42 +453,6 @@ def check_container_health() -> tuple[bool, str]:
         return True, f"Could not check container health: {e} (not critical)"
 
 
-@diagnostic.check("mcp_servers")
-def check_mcp_servers() -> tuple[bool, str]:
-    """Check if MCP servers are configured."""
-    claude_json = Path.home() / ".claude.json"
-    if not claude_json.exists():
-        return True, "No MCP servers configured (optional)"
-
-    try:
-        import json
-
-        with open(claude_json) as f:
-            data = json.load(f)
-
-        servers = data.get("mcpServers", {})
-        if not servers:
-            return True, "No MCP servers configured (optional)"
-
-        server_names = ", ".join(servers.keys())
-        return True, f"MCP servers configured: {server_names}"
-    except Exception as e:
-        return False, f"Error reading MCP server config: {e}"
-
-
-@diagnostic.check("docker_socket")
-def check_docker_socket() -> tuple[bool, str]:
-    """Check if Docker socket is accessible."""
-    socket_path = Path("/var/run/docker.sock")
-    if not socket_path.exists():
-        return False, "Docker socket not found at /var/run/docker.sock"
-
-    if not os.access(socket_path, os.R_OK | os.W_OK):
-        return False, "Docker socket not accessible (check permissions)"
-
-    return True, "Docker socket accessible"
-
-
 def _check_port_available(port: int, name: str) -> tuple[bool, str]:
     """Check if a port is available or already in use by expected service."""
     import socket
@@ -411,8 +480,8 @@ def fix_docker_running() -> tuple[bool, str]:
         if result.returncode == 0:
             console.print("[dim]Waiting for Docker to start (this may take a minute)...[/dim]")
 
-            # 40s timeout: diagnostic auto-fix provides faster feedback than lifecycle commands (60s)
-            # Exponential backoff (1s, 2s, 4s, 8s, 16s, 16s): ~8-10 retry attempts within 40s window
+            # 40s timeout: diagnostic auto-fix provides faster feedback than lifecycle commands
+            # Exponential backoff (1s, 2s, 4s, 8s, 16s, 16s): ~8-10 retries within 40s window
             success = wait_with_exponential_backoff(
                 check_fn=lambda: subprocess.run(
                     ["docker", "info"], capture_output=True, timeout=10
@@ -420,7 +489,9 @@ def fix_docker_running() -> tuple[bool, str]:
                 max_wait=40,
                 max_delay=16,
             )
-            return (True, "Docker started successfully") if success else (False, "Docker failed to start within timeout")
+            if success:
+                return True, "Docker started successfully"
+            return False, "Docker failed to start within timeout"
         else:
             return False, "Failed to launch Docker Desktop"
     elif system == "Linux":
@@ -527,30 +598,19 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
         tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]], str]
     ] = []
 
-    checks: list[
-        tuple[str, str, Callable[[], tuple[bool, str]], Callable[[], tuple[bool, str]] | None]
-    ] = [
-        ("critical", "Docker installed", check_docker_installed, None),
-        ("critical", "Docker running", check_docker_running, fix_docker_running),
-        ("critical", "Docker socket", check_docker_socket, None),
-        ("critical", "Docker Compose", check_docker_compose, None),
-        ("critical", "Claude authentication", check_claude_auth, fix_claude_auth),
-        ("warning", "~/.claude directory", check_claude_dir, fix_claude_dir),
-        ("warning", "Disk space", check_disk_space, fix_disk_space),
-        ("warning", "Default profile valid", check_profile_valid, None),
-        ("info", "npm installed", check_npm_installed, None),
-        ("info", "Git installed", check_git_installed, None),
-        ("info", "Happy Coder config", check_happy_config, fix_happy_dir),
-        ("info", "MCP servers", check_mcp_servers, None),
-        ("info", "GPG port (9876)", check_gpg_port, None),
-        ("info", "Serena port (9121)", check_serena_port, None),
-        ("info", "Registry connectivity", check_registry_connectivity, None),
+    checks = [
+        (
+            meta,
+            diagnostic._checks[meta.name],
+            diagnostic.get_fix(meta.fix_name) if meta.fix_name else None,
+        )
+        for meta in diagnostic.get_ordered_checks()
+        if not meta.conditional or container
     ]
 
-    if container:
-        checks.append(("warning", "Container health", check_container_health, None))
-
-    for severity, name, check_fn, fix_fn in checks:
+    for meta, check_fn, fix_fn in checks:
+        severity = meta.severity
+        name = meta.display_name
         try:
             passed, message = check_fn()
 
@@ -602,7 +662,9 @@ def doctor(fix: bool, verbose: bool, container: bool) -> None:
 
                         if severity == "critical":
                             critical_passed = all(
-                                check_fn()[0] for sev, _, check_fn, _ in checks if sev == "critical"
+                                diagnostic._checks[meta.name]()[0]
+                                for meta in diagnostic.get_ordered_checks()
+                                if meta.severity == "critical" and not meta.conditional
                             )
                     else:
                         console.print(

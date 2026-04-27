@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from mirustech.devenv_generator.cli import main
-from mirustech.devenv_generator.commands.diagnostics import DiagnosticRegistry
+from mirustech.devenv_generator.commands.diagnostics import CheckMetadata, DiagnosticRegistry
 
 
 class TestDiagnosticRegistry:
@@ -129,6 +129,43 @@ class TestDiagnosticRegistry:
         results = registry.run_all_checks()
         assert len(results) == 1
         assert results[0] == ("same_name", True, "Second")
+
+    def test_check_stores_metadata(self) -> None:
+        """Should store CheckMetadata when a check is registered with kwargs."""
+        registry = DiagnosticRegistry()
+
+        @registry.check("meta_check", severity="critical", display_name="Test")
+        def meta_check_fn() -> tuple[bool, str]:
+            return True, "ok"
+
+        assert "meta_check" in registry._metadata
+        meta = registry._metadata["meta_check"]
+        assert isinstance(meta, CheckMetadata)
+        assert meta.name == "meta_check"
+        assert meta.severity == "critical"
+        assert meta.display_name == "Test"
+        assert meta.fix_name is None
+        assert meta.conditional is False
+
+    def test_get_ordered_checks_groups_by_severity(self) -> None:
+        """Should return checks with critical before warning before info."""
+        registry = DiagnosticRegistry()
+
+        @registry.check("info_check", severity="info", display_name="Info")
+        def info_fn() -> tuple[bool, str]:
+            return True, "info"
+
+        @registry.check("critical_check", severity="critical", display_name="Critical")
+        def critical_fn() -> tuple[bool, str]:
+            return True, "critical"
+
+        @registry.check("warning_check", severity="warning", display_name="Warning")
+        def warning_fn() -> tuple[bool, str]:
+            return True, "warning"
+
+        ordered = registry.get_ordered_checks()
+        severities = [m.severity for m in ordered]
+        assert severities == ["critical", "warning", "info"]
 
 
 class TestDoctorCommand:
