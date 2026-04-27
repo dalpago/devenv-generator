@@ -59,7 +59,7 @@ def _detect_python_version(project_path: Path) -> str | None:
                 match = re.search(r"(\d+\.\d+)", requires_python)
                 if match:
                     return match.group(1)
-        except Exception:
+        except (tomllib.TOMLDecodeError, KeyError):
             pass
 
     return None
