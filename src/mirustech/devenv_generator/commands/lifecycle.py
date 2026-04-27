@@ -424,15 +424,15 @@ def _run_sandbox(
 
         # Sentinel: if subprocess.run raises (e.g. docker not in PATH),
         # result is still bound for sys.exit below
-        result = subprocess.CompletedProcess(cmd, returncode=1)
+        run_result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(cmd, returncode=1)
         try:
             # subprocess.run keeps Python alive; os.execvp would replace
             # the process, preventing finally-block cleanup of host-side
             # Serena and GPG forwarder processes
-            result = subprocess.run(cmd, cwd=sandbox_dir)
+            run_result = subprocess.run(cmd, cwd=sandbox_dir)
         finally:
             process_manager.cleanup_all()
-        sys.exit(result.returncode)
+        sys.exit(run_result.returncode)
 
 
 @click.command("run")
@@ -686,7 +686,7 @@ def attach_sandbox(name: str | None) -> None:
 
     # Use docker compose exec with interactive TTY
     cmd = ["docker", "compose", "-p", compose_project_name(name), "exec", "-it", "dev", "/bin/zsh"]
-    result = subprocess.CompletedProcess(cmd, returncode=1)
+    result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(cmd, returncode=1)
     try:
         result = subprocess.run(cmd)
     finally:
@@ -798,7 +798,7 @@ def cd_sandbox(name: str | None) -> None:
     console.print("[dim]Type 'exit' to return[/dim]")
 
     cmd = [shell]
-    result = subprocess.CompletedProcess(cmd, returncode=1)
+    result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(cmd, returncode=1)
     try:
         result = subprocess.run(cmd, cwd=sandbox_dir)
     finally:
