@@ -168,25 +168,47 @@ def compute_build_hash(profile: ProfileConfig) -> str:
     return hasher.hexdigest()
 
 
-class DevEnvGenerator:
-    """Generate development environment files from profiles."""
+def _detect_age_public_key() -> str | None:
+    """Try to detect the user's age public key from standard locations.
+
+    Returns:
+        The age public key if found, None otherwise.
+    """
+    key_paths = [
+        Path("~/.config/sops/age/keys.txt").expanduser(),
+        Path("~/.config/chezmoi/key.txt").expanduser(),
+        Path("~/.age/key.txt").expanduser(),
+    ]
+
+    for key_path in key_paths:
+        if key_path.exists():
+            try:
+                content = key_path.read_text()
+                for line in content.splitlines():
+                    line = line.strip()
+                    # Public key line starts with "# public key:"
+                    if line.startswith("# public key:"):
+                        return line.split(":", 1)[1].strip()
+                    # Or it might be just the public key on a line
+                    if line.startswith("age1") and not line.startswith("AGE-SECRET-KEY"):
+                        return line
+            except OSError:
+                continue
+
+    return None
+
+
+class BaseGenerator:
+    """Shared base for DevEnvGenerator and SandboxGenerator."""
 
     def __init__(
         self,
         profile: ProfileConfig,
-        project_name: str | None = None,
+        project_name: str,
         image_spec: ImageSpec | None = None,
     ) -> None:
-        """Initialize the generator.
-
-        Args:
-            profile: Profile configuration.
-            project_name: Name for the project (used in volume names, etc.).
-                         Defaults to 'project'.
-            image_spec: Optional image specification for registry support.
-        """
         self.profile = profile
-        self.project_name = project_name or "project"
+        self.project_name = project_name
         self.image_spec = image_spec
         self.env = Environment(
             loader=PackageLoader("mirustech.devenv_generator", "templates"),
@@ -194,7 +216,7 @@ class DevEnvGenerator:
             lstrip_blocks=True,
         )
         self.env.tests["match"] = lambda value, pattern: re.search(pattern, value) is not None
-        self.logger = logger.bind(profile=profile.name, project=self.project_name)
+        self.logger = logger.bind(profile=profile.name, project=project_name)
 
     def render_dockerfile(self) -> str:
         """Render the Dockerfile template.
@@ -213,6 +235,72 @@ class DevEnvGenerator:
         """
         template = self.env.get_template("devenv-start.sh.j2")
         return template.render(profile=self.profile, project_name=self.project_name)
+
+    def render_env_example(self) -> str:
+        """Render the .env.example file.
+
+        Returns:
+            Rendered .env.example content.
+        """
+        lines = [
+            "# Environment variables for devenv container",
+            "#",
+            "# Setup:",
+            "#   1. Copy this file: cp .env.example .env",
+            "#   2. Fill in your token below",
+            "#   3. Encrypt with SOPS: sops encrypt --in-place .env",
+            "#",
+            "# To edit later: sops .env",
+            "",
+            "# Claude Code auth token (required for authentication)",
+            "# Get token: Run 'claude setup-token' on your host machine",
+            "ANTHROPIC_AUTH_TOKEN=",
+            "",
+        ]
+        return "\n".join(lines)
+
+    def render_sops_yaml(self, age_public_key: str | None = None) -> str:
+        """Render the .sops.yaml configuration file.
+
+        Args:
+            age_public_key: The age public key for encryption. If None, uses placeholder.
+
+        Returns:
+            Rendered .sops.yaml content.
+        """
+        key = age_public_key or "age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        return f"""# SOPS configuration for encrypting secrets
+# Documentation: https://github.com/getsops/sops
+#
+# Setup:
+#   1. Generate age key: age-keygen -o ~/.config/sops/age/keys.txt
+#   2. Replace the public key below with your key (starts with age1...)
+#   3. Encrypt .env: sops encrypt --in-place .env
+
+creation_rules:
+  - path_regex: \\.env$
+    age: {key}
+"""
+
+
+class DevEnvGenerator(BaseGenerator):
+    """Generate development environment files from profiles."""
+
+    def __init__(
+        self,
+        profile: ProfileConfig,
+        project_name: str | None = None,
+        image_spec: ImageSpec | None = None,
+    ) -> None:
+        """Initialize the generator.
+
+        Args:
+            profile: Profile configuration.
+            project_name: Name for the project (used in volume names, etc.).
+                         Defaults to 'project'.
+            image_spec: Optional image specification for registry support.
+        """
+        super().__init__(profile, project_name or "project", image_spec)
 
     def render_docker_compose(self) -> str:
         """Render the docker-compose.yml template.
@@ -262,52 +350,19 @@ class DevEnvGenerator:
         """Render the .env.example file.
 
         Returns:
-            Rendered .env.example content.
+            Rendered .env.example content with profile-specific environment variables.
         """
-        lines = [
-            "# Environment variables for devenv container",
-            "# ",
-            "# Setup:",
-            "#   1. Copy this file: cp .env.example .env",
-            "#   2. Fill in your token below",
-            "#   3. Encrypt with SOPS: sops encrypt --in-place .env",
-            "#   4. Commit the encrypted .env file",
-            "#",
-            "# To edit later: sops .env",
-            "",
-            "# Claude Code auth token (required for authentication)",
-            "# Get token: Run 'claude setup-token' on your host machine",
-            "ANTHROPIC_AUTH_TOKEN=",
-            "",
-        ]
+        content = super().render_env_example()
         # Add any profile-specific environment variables
+        extra_lines = []
         for key in self.profile.environment:
             if key != "ANTHROPIC_API_KEY":  # Skip deprecated API key approach
-                lines.append(f"{key}=")
-        return "\n".join(lines)
-
-    def render_sops_yaml(self, age_public_key: str | None = None) -> str:
-        """Render the .sops.yaml configuration file.
-
-        Args:
-            age_public_key: The age public key for encryption. If None, uses placeholder.
-
-        Returns:
-            Rendered .sops.yaml content.
-        """
-        key = age_public_key or "age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        return f"""# SOPS configuration for encrypting secrets
-# Documentation: https://github.com/getsops/sops
-#
-# Setup:
-#   1. Generate age key: age-keygen -o ~/.config/sops/age/keys.txt
-#   2. Replace the public key below with your key (starts with age1...)
-#   3. Encrypt .env: sops encrypt --in-place .env
-
-creation_rules:
-  - path_regex: \\.env$
-    age: {key}
-"""
+                extra_lines.append(f"{key}=")
+        if extra_lines:
+            # content ends with trailing newline from the last "" in base lines joined by \n
+            # Append extra vars after the base content
+            content = content + "\n".join(extra_lines)
+        return content
 
     def render_gitignore(self) -> str:
         """Render the .gitignore additions.
@@ -321,37 +376,6 @@ creation_rules:
             "# devenv - unencrypted secrets (should not exist if following workflow)\n"
             ".env.unencrypted\n"
         )
-
-    def _detect_age_public_key(self) -> str | None:
-        """Try to detect the user's age public key.
-
-        Looks in standard locations for age keys.
-
-        Returns:
-            The age public key if found, None otherwise.
-        """
-        key_paths = [
-            Path("~/.config/sops/age/keys.txt").expanduser(),
-            Path("~/.config/chezmoi/key.txt").expanduser(),  # chezmoi uses age
-            Path("~/.age/key.txt").expanduser(),
-        ]
-
-        for key_path in key_paths:
-            if key_path.exists():
-                try:
-                    content = key_path.read_text()
-                    for line in content.splitlines():
-                        line = line.strip()
-                        # Public key line starts with "# public key:"
-                        if line.startswith("# public key:"):
-                            return line.split(":", 1)[1].strip()
-                        # Or it might be just the public key on a line
-                        if line.startswith("age1") and not line.startswith("AGE-SECRET-KEY"):
-                            return line
-                except OSError:
-                    continue
-
-        return None
 
     def generate(self, output_dir: Path) -> list[Path]:
         """Generate all development environment files.
@@ -408,7 +432,7 @@ creation_rules:
         self.logger.info("generated_file", path=str(env_example_path))
 
         # .sops.yaml - try to detect user's age public key
-        age_public_key = self._detect_age_public_key()
+        age_public_key = _detect_age_public_key()
         sops_yaml_path = output_dir / ".sops.yaml"
         sops_yaml_path.write_text(self.render_sops_yaml(age_public_key))
         generated_files.append(sops_yaml_path)
@@ -436,7 +460,7 @@ creation_rules:
         return generated_files
 
 
-class SandboxGenerator:
+class SandboxGenerator(BaseGenerator):
     """Generate sandbox environment for running Claude Code against existing projects."""
 
     def __init__(
@@ -456,22 +480,11 @@ class SandboxGenerator:
             use_host_claude_config: Whether to mount host ~/.claude.
             image_spec: Optional image specification for registry support.
         """
-        self.profile = profile
+        super().__init__(profile, sandbox_name, image_spec)
         self.mounts = mounts
         self.sandbox_name = sandbox_name
         self.use_host_claude_config = use_host_claude_config
-        self.image_spec = image_spec
-        self.env = Environment(
-            loader=PackageLoader("mirustech.devenv_generator", "templates"),
-            trim_blocks=True,
-            lstrip_blocks=True,
-        )
-        self.env.tests["match"] = lambda value, pattern: re.search(pattern, value) is not None
-        self.logger = logger.bind(
-            sandbox=sandbox_name,
-            profile=profile.name,
-            mount_count=len(mounts),
-        )
+        self.logger = self.logger.bind(sandbox=sandbox_name, mount_count=len(mounts))
 
     def render_docker_compose(self) -> str:
         """Render the sandbox docker-compose.yml template.
@@ -506,29 +519,11 @@ class SandboxGenerator:
             user_gid=user_gid,
         )
 
-    def render_dockerfile(self) -> str:
-        """Render the Dockerfile template (reuses standard template).
-
-        Returns:
-            Rendered Dockerfile content.
-        """
-        template = self.env.get_template("Dockerfile.j2")
-        return template.render(profile=self.profile, project_name=self.sandbox_name)
-
-    def render_devenv_start_script(self) -> str:
-        """Render the devenv-start.sh entrypoint script template.
-
-        Returns:
-            Rendered devenv-start.sh content.
-        """
-        template = self.env.get_template("devenv-start.sh.j2")
-        return template.render(profile=self.profile, project_name=self.sandbox_name)
-
     def render_env_example(self) -> str:
         """Render the .env.example file.
 
         Returns:
-            Rendered .env.example content.
+            Rendered .env.example content for sandbox.
         """
         lines = [
             "# Environment variables for sandbox",
@@ -546,37 +541,14 @@ class SandboxGenerator:
         ]
         return "\n".join(lines)
 
-    def _detect_age_public_key(self) -> str | None:
-        """Try to detect the user's age public key."""
-        key_paths = [
-            Path("~/.config/sops/age/keys.txt").expanduser(),
-            Path("~/.config/chezmoi/key.txt").expanduser(),
-            Path("~/.age/key.txt").expanduser(),
-        ]
-
-        for key_path in key_paths:
-            if key_path.exists():
-                try:
-                    content = key_path.read_text()
-                    for line in content.splitlines():
-                        line = line.strip()
-                        if line.startswith("# public key:"):
-                            return line.split(":", 1)[1].strip()
-                        if line.startswith("age1") and not line.startswith("AGE-SECRET-KEY"):
-                            return line
-                except OSError:
-                    continue
-
-        return None
-
-    def render_sops_yaml(self) -> str:
+    def render_sops_yaml(self, age_public_key: str | None = None) -> str:
         """Render the .sops.yaml configuration file.
 
         Returns:
             Rendered .sops.yaml content.
         """
         key = (
-            self._detect_age_public_key()
+            _detect_age_public_key()
             or "age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         )
         return f"""# SOPS configuration for encrypting secrets
