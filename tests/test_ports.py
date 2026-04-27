@@ -10,12 +10,12 @@ from click.testing import CliRunner
 
 from mirustech.devenv_generator.cli import main
 from mirustech.devenv_generator.commands.ports import (
-    _get_sandbox_dir,
     _load_dynamic_ports,
     _save_dynamic_ports,
     _update_compose_ports,
 )
 from mirustech.devenv_generator.models import PortConfig
+from mirustech.devenv_generator.utils.sandbox import get_sandbox_dir as _get_sandbox_dir
 
 
 class TestGetSandboxDir:
@@ -216,7 +216,7 @@ class TestExposeCommandExtended:
     def test_expose_sandbox_not_found(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when sandbox doesn't exist."""
         with patch(
-            "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["expose", "8000", "--name", "nonexistent"])
@@ -231,7 +231,7 @@ class TestExposeCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -257,7 +257,7 @@ services:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -288,7 +288,7 @@ class TestPortsCommandExtended:
     def test_ports_sandbox_not_found(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when sandbox doesn't exist."""
         with patch(
-            "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["ports", "--name", "nonexistent"])
@@ -303,7 +303,7 @@ class TestPortsCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.ports.run_command") as mock_run,
@@ -321,7 +321,7 @@ class TestPortsCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.ports.run_command") as mock_run,
@@ -339,7 +339,7 @@ class TestPortsCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.ports.run_command") as mock_run,
@@ -365,7 +365,7 @@ class TestPortsCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.ports.run_command") as mock_run,
@@ -393,7 +393,7 @@ class TestPortsCommandExtended:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.ports.run_command") as mock_run,
@@ -415,7 +415,7 @@ class TestUnexposeCommandExtended:
     def test_unexpose_sandbox_not_found(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when sandbox doesn't exist."""
         with patch(
-            "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["unexpose", "8000", "--name", "nonexistent"])
@@ -430,7 +430,7 @@ class TestUnexposeCommandExtended:
         # No dynamic ports file means no dynamic ports
 
         with patch(
-            "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["unexpose", "8000", "--name", "my-sandbox"])
@@ -467,7 +467,7 @@ services:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -508,7 +508,7 @@ services:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -544,7 +544,7 @@ services:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -586,7 +586,7 @@ services:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.ports.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(

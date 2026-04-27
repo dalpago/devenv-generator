@@ -161,7 +161,7 @@ class BuildOrPullImageUseCase:
 
         # Build using docker compose
         build_result = subprocess.run(
-            ["docker", "compose", "-p", sandbox_name, "build"],
+            ["docker", "compose", "-p", f"devenv-{sandbox_name}", "build"],
             cwd=sandbox_dir,
         )
 
@@ -178,7 +178,7 @@ class BuildOrPullImageUseCase:
         console.print("[green]✓ Built successfully[/green]")
 
         # Get the built image name (docker compose uses project_service format)
-        local_image_name = f"{sandbox_name}-dev"
+        local_image_name = f"devenv-{sandbox_name}-dev"
 
         # Tag with registry name
         if not self.registry_client.tag_image(local_image_name, image_spec):

@@ -23,12 +23,8 @@ from mirustech.devenv_generator.commands.lifecycle import (
 from mirustech.devenv_generator.commands.management import clean, remove_sandbox, status
 from mirustech.devenv_generator.commands.ports import expose_port, list_ports, unexpose_port
 from mirustech.devenv_generator.commands.profiles import profiles
-from mirustech.devenv_generator.generator import (
-    DevEnvGenerator,
-    get_bundled_profile,
-    load_profile,
-)
-from mirustech.devenv_generator.models import ProfileConfig
+from mirustech.devenv_generator.generator import DevEnvGenerator
+from mirustech.devenv_generator.utils.sandbox import load_profile_by_name
 
 # Configure structlog for CLI
 structlog.configure(
@@ -41,8 +37,6 @@ structlog.configure(
 
 console = Console()
 logger = structlog.get_logger()
-
-SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
 
 
 class DefaultToRunGroup(click.RichGroup):
@@ -60,24 +54,6 @@ class DefaultToRunGroup(click.RichGroup):
         except click.UsageError:
             # Unknown command - treat all args as paths for 'run'
             return "run", self.commands.get("run"), args
-
-
-def _load_profile(profile: str) -> ProfileConfig:
-    """Load profile from file or bundled profiles."""
-    profile_path = Path(profile)
-    if profile_path.exists() and profile_path.suffix in (".yaml", ".yml"):
-        config = load_profile(profile_path)
-        console.print(f"[dim]Profile:[/dim] {profile_path}")
-        return config
-
-    try:
-        config = get_bundled_profile(profile)
-        console.print(f"[dim]Profile:[/dim] {profile}")
-        return config
-    except FileNotFoundError:
-        console.print(f"[red]Profile not found:[/red] {profile}")
-        console.print("Use 'devenv profiles list' to see available profiles")
-        raise SystemExit(1) from None
 
 
 @click.group(cls=DefaultToRunGroup, invoke_without_command=True)
@@ -267,7 +243,7 @@ def new_project(path: str, profile: str, name: str | None, python_version: str |
     output_path.mkdir(parents=True, exist_ok=True)
 
     project_name = name or output_path.name
-    config = _load_profile(profile)
+    config = load_profile_by_name(profile)
 
     if python_version:
         config.python.version = python_version

@@ -75,7 +75,7 @@ class BuildDecisionUseCase:
         image_spec: ImageSpec | None = None
 
         # Check if image exists locally
-        image_result = run_command(["docker", "images", "-q", f"{sandbox_name}-dev:latest"])
+        image_result = run_command(["docker", "images", "-q", f"devenv-{sandbox_name}-dev:latest"])
         image_exists = bool(image_result.stdout.strip())
 
         if not image_exists:

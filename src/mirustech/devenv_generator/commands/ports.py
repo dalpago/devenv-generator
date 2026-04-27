@@ -12,17 +12,11 @@ from rich.table import Table
 
 from mirustech.devenv_generator.commands.management import _is_sandbox_running
 from mirustech.devenv_generator.models import PortConfig
+from mirustech.devenv_generator.utils.sandbox import compose_project_name, get_sandbox_dir
 from mirustech.devenv_generator.utils.subprocess import run_command
 
 console = Console()
 logger = structlog.get_logger()
-
-SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
-
-
-def _get_sandbox_dir(name: str) -> Path:
-    """Get the sandbox directory for a given name."""
-    return SANDBOXES_DIR / name
 
 
 def _load_dynamic_ports(sandbox_dir: Path) -> dict[str, dict[str, str]]:
@@ -73,7 +67,10 @@ def _update_compose_ports(
     # Recreate container with new ports
     console.print("[dim]Updating container with new port mappings...[/dim]")
     result = run_command(
-        ["docker", "compose", "-p", sandbox_name, "up", "-d", "--force-recreate"],
+        [
+            "docker", "compose", "-p", compose_project_name(sandbox_name),
+            "up", "-d", "--force-recreate",
+        ],
         cwd=sandbox_dir,
         timeout=60,
     )
@@ -102,7 +99,7 @@ def expose_port(port_specs: tuple[str, ...], name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -159,7 +156,7 @@ def list_ports(name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -167,7 +164,11 @@ def list_ports(name: str | None) -> None:
 
     # Get ports from docker inspect
     result = run_command(
-        ["docker", "compose", "-p", name, "ps", "--format", "json"], cwd=sandbox_dir
+        [
+            "docker", "compose", "-p", compose_project_name(name),
+            "ps", "--format", "json", "--status", "running",
+        ],
+        cwd=sandbox_dir,
     )
 
     if result.returncode != 0:
@@ -236,7 +237,7 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -290,7 +291,10 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
     if _is_sandbox_running(name, sandbox_dir):
         console.print("[dim]Updating container...[/dim]")
         result = run_command(
-            ["docker", "compose", "-p", name, "up", "-d", "--force-recreate"],
+            [
+                "docker", "compose", "-p", compose_project_name(name),
+                "up", "-d", "--force-recreate",
+            ],
             cwd=sandbox_dir,
             timeout=60,
         )

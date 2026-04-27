@@ -4,17 +4,17 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from click.testing import CliRunner
 from hypothesis import given
 from hypothesis import strategies as st
-from click.testing import CliRunner
 
 from mirustech.devenv_generator.cli import main
 from mirustech.devenv_generator.commands.lifecycle import (
     _detect_python_version,
-    _get_sandbox_dir,
     _parse_port_spec,
 )
 from mirustech.devenv_generator.models import PortConfig
+from mirustech.devenv_generator.utils.sandbox import get_sandbox_dir as _get_sandbox_dir
 
 
 class TestGetSandboxDir:
@@ -195,14 +195,14 @@ class TestLoadProfile:
 
     def test_loads_bundled_profile(self) -> None:
         """Should load bundled profile by name."""
-        from mirustech.devenv_generator.commands.lifecycle import _load_profile
+        from mirustech.devenv_generator.utils.sandbox import load_profile_by_name
 
-        result = _load_profile("default")
+        result = load_profile_by_name("default")
         assert result.name == "default"
 
     def test_loads_yaml_file(self, tmp_path: Path) -> None:
         """Should load profile from YAML file path."""
-        from mirustech.devenv_generator.commands.lifecycle import _load_profile
+        from mirustech.devenv_generator.utils.sandbox import load_profile_by_name
 
         profile_file = tmp_path / "custom.yaml"
         profile_file.write_text(
@@ -214,15 +214,15 @@ python:
 """
         )
 
-        result = _load_profile(str(profile_file))
+        result = load_profile_by_name(str(profile_file))
         assert result.name == "custom"
 
     def test_exits_for_nonexistent_profile(self) -> None:
         """Should exit for nonexistent profile."""
-        from mirustech.devenv_generator.commands.lifecycle import _load_profile
+        from mirustech.devenv_generator.utils.sandbox import load_profile_by_name
 
         with pytest.raises(SystemExit):
-            _load_profile("nonexistent-profile-xyz")
+            load_profile_by_name("nonexistent-profile-xyz")
 
 
 class TestLifecycleCommands:
@@ -265,7 +265,7 @@ class TestLifecycleCommands:
     def test_stop_nonexistent_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when stopping nonexistent sandbox."""
         with patch(
-            "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["stop", "nonexistent"])
@@ -275,7 +275,7 @@ class TestLifecycleCommands:
     def test_start_nonexistent_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when starting nonexistent sandbox."""
         with patch(
-            "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["start", "nonexistent"])
@@ -285,7 +285,7 @@ class TestLifecycleCommands:
     def test_attach_nonexistent_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when attaching to nonexistent sandbox."""
         with patch(
-            "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["attach", "nonexistent"])
@@ -413,7 +413,7 @@ class TestCdCommand:
     def test_cd_nonexistent_sandbox(self, runner: CliRunner, tmp_path: Path) -> None:
         """Should error when sandbox doesn't exist."""
         with patch(
-            "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["cd", "nonexistent"])
@@ -427,7 +427,7 @@ class TestCdCommand:
         (sandbox_dir / "docker-compose.yml").write_text("services:\n  dev:\n")
 
         with patch(
-            "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+            "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
             tmp_path,
         ):
             result = runner.invoke(main, ["cd", "my-sandbox"])
@@ -451,7 +451,7 @@ class TestStartExistingSandbox:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run,
@@ -478,7 +478,7 @@ class TestStopExistingSandbox:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -498,7 +498,7 @@ class TestStopExistingSandbox:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
@@ -527,7 +527,7 @@ class TestAttachExistingSandbox:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run,
@@ -640,11 +640,11 @@ class TestLifecycleWorkflows:
 
         with (
             patch(
-                "mirustech.devenv_generator.commands.lifecycle.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch(
-                "mirustech.devenv_generator.commands.management.SANDBOXES_DIR",
+                "mirustech.devenv_generator.utils.sandbox.SANDBOXES_DIR",
                 tmp_path,
             ),
             patch("mirustech.devenv_generator.commands.lifecycle.run_command") as mock_run,

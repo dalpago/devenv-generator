@@ -28,12 +28,11 @@ from rich.console import Console
 
 from mirustech.devenv_generator.generator import get_bundled_profile
 from mirustech.devenv_generator.settings import get_settings
+from mirustech.devenv_generator.utils.sandbox import SANDBOXES_DIR
 from mirustech.devenv_generator.utils.subprocess import run_command, wait_with_exponential_backoff
 
 console = Console()
 logger = structlog.get_logger()
-
-SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
 
 
 class DiagnosticRegistry:
@@ -143,8 +142,6 @@ diagnostic = DiagnosticRegistry()
 @diagnostic.check("docker_installed")
 def check_docker_installed() -> tuple[bool, str]:
     """Check if Docker is installed."""
-    import subprocess
-
     result = run_command(["docker", "--version"])
     if result.returncode == 0:
         version = result.stdout.strip()
@@ -468,7 +465,6 @@ def fix_disk_space() -> tuple[bool, str]:
     console.print("[dim]Running cleanup to free disk space...[/dim]")
 
     sandboxes = _list_sandboxes()
-    [n for n, _, running in sandboxes if not running]
 
     result = run_command(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
     devenv_images = []

@@ -10,12 +10,11 @@ import structlog
 from rich.console import Console
 from rich.table import Table
 
+from mirustech.devenv_generator.utils.sandbox import SANDBOXES_DIR, compose_project_name
 from mirustech.devenv_generator.utils.subprocess import run_command
 
 console = Console()
 logger = structlog.get_logger()
-
-SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
 
 
 def _list_sandboxes() -> list[tuple[str, Path, bool]]:
@@ -57,7 +56,7 @@ def _force_cleanup_project_containers(
         True if all containers were stopped successfully, False otherwise.
     """
     # Step 1: docker compose down (best-effort for service containers)
-    down_cmd = ["docker", "compose", "-p", name, "down", "--remove-orphans"]
+    down_cmd = ["docker", "compose", "-p", compose_project_name(name), "down", "--remove-orphans"]
     if remove_volumes:
         down_cmd.append("-v")
     down_result = run_command(down_cmd, cwd=sandbox_dir, timeout=60)
@@ -76,7 +75,7 @@ def _force_cleanup_project_containers(
             "ps",
             "-q",
             "--filter",
-            f"label=com.docker.compose.project={name}",
+            f"label=com.docker.compose.project={compose_project_name(name)}",
         ],
         timeout=10,
     )
@@ -115,7 +114,10 @@ def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
     """
     try:
         result = run_command(
-            ["docker", "compose", "-p", name, "ps", "-q", "--status", "running"],
+            [
+                "docker", "compose", "-p", compose_project_name(name),
+                "ps", "-q", "--status", "running",
+            ],
             cwd=sandbox_dir,
         )
         return bool(result.stdout.strip())
@@ -180,7 +182,7 @@ def status() -> None:
         size_str = _format_size(dir_size)
 
         # Get image size
-        image_name = f"{name}-dev:latest"
+        image_name = f"{compose_project_name(name)}-dev:latest"
         image_size = _get_image_size(image_name)
         image_str = _format_size(image_size) if image_size else "[dim]—[/dim]"
 
@@ -277,7 +279,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     devenv_images: list[tuple[str, str, str]] = []
     if result.returncode == 0:
         for line in result.stdout.strip().split("\n"):
-            if line and "-dev:" in line:
+            if line and line.startswith("devenv-") and "-dev:" in line:
                 parts = line.split("\t")
                 if len(parts) >= 3:
                     devenv_images.append((parts[0], parts[1], parts[2]))
@@ -287,7 +289,7 @@ def clean(stopped: bool, images: bool, all_: bool, dry_run: bool) -> None:
     unused_images = [
         (name, size, id_)
         for name, size, id_ in devenv_images
-        if name.replace("-dev:latest", "") not in sandbox_names
+        if name.removeprefix("devenv-").replace("-dev:latest", "") not in sandbox_names
     ]
 
     # Get dangling images

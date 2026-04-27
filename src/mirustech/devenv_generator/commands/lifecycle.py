@@ -20,25 +20,20 @@ from mirustech.devenv_generator.commands.management import (
     _force_cleanup_project_containers,
     _is_sandbox_running,
 )
-from mirustech.devenv_generator.generator import (
-    get_bundled_profile,
-    load_profile,
-)
-from mirustech.devenv_generator.models import MountSpec, PortConfig, ProfileConfig
+from mirustech.devenv_generator.models import MountSpec, PortConfig
 from mirustech.devenv_generator.settings import get_settings
 from mirustech.devenv_generator.utils.process_manager import ProcessManager
+from mirustech.devenv_generator.utils.sandbox import (
+    compose_project_name,
+    get_sandbox_dir,
+    load_profile_by_name,
+)
 from mirustech.devenv_generator.utils.subprocess import run_command, wait_with_exponential_backoff
 
 console = Console()
 logger = structlog.get_logger()
 
-SANDBOXES_DIR = Path("~/.local/share/devenv-sandboxes").expanduser()
 process_manager = ProcessManager()
-
-
-def _get_sandbox_dir(name: str) -> Path:
-    """Get the sandbox directory for a given name."""
-    return SANDBOXES_DIR / name
 
 
 def _detect_python_version(project_path: Path) -> str | None:
@@ -68,24 +63,6 @@ def _detect_python_version(project_path: Path) -> str | None:
             pass
 
     return None
-
-
-def _load_profile(profile: str) -> ProfileConfig:
-    """Load profile from file or bundled profiles."""
-    profile_path = Path(profile)
-    if profile_path.exists() and profile_path.suffix in (".yaml", ".yml"):
-        config = load_profile(profile_path)
-        console.print(f"[dim]Profile:[/dim] {profile_path}")
-        return config
-
-    try:
-        config = get_bundled_profile(profile)
-        console.print(f"[dim]Profile:[/dim] {profile}")
-        return config
-    except FileNotFoundError:
-        console.print(f"[red]Profile not found:[/red] {profile}")
-        console.print("Use 'devenv profiles list' to see available profiles")
-        raise SystemExit(1) from None
 
 
 def _parse_port_spec(spec: str) -> PortConfig:
@@ -243,8 +220,8 @@ def _start_serena_server(
 
         # Verify Serena is actually responding (GET /mcp returns 406 which is fine —
         # it means uvicorn is up; only connection errors indicate a real failure)
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         try:
             urllib.request.urlopen(f"http://localhost:{port}/mcp", timeout=5)
@@ -389,7 +366,7 @@ def _run_sandbox(
 
     if not skip_build:
         console.print("[dim]Building container...[/dim]")
-        build_cmd = ["docker", "compose", "-p", sandbox_name, "build"]
+        build_cmd = ["docker", "compose", "-p", compose_project_name(sandbox_name), "build"]
         if no_cache:
             build_cmd.append("--no-cache")
             console.print("[dim]  (forcing rebuild without cache)[/dim]")
@@ -403,7 +380,9 @@ def _run_sandbox(
     if detach:
         console.print(f"[dim]Starting {sandbox_name} in background...[/dim]")
         result = run_command(
-            ["docker", "compose", "-p", sandbox_name, "up", "-d"], cwd=sandbox_dir, timeout=300
+            ["docker", "compose", "-p", compose_project_name(sandbox_name), "up", "-d"],
+            cwd=sandbox_dir,
+            timeout=300,
         )
         if result.returncode != 0:
             console.print(f"[red]Failed to start:[/red]\n{result.stderr}")
@@ -422,11 +401,17 @@ def _run_sandbox(
         if shell:
             console.print(f"[bold green]Starting shell in {sandbox_name}...[/bold green]")
             console.print("[dim]Press Ctrl+D to exit[/dim]")
-            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "--service-ports", "dev", "/bin/zsh"]
+            cmd = [
+                "docker", "compose", "-p", compose_project_name(sandbox_name),
+                "run", "--rm", "--service-ports", "dev", "/bin/zsh",
+            ]
         else:
             console.print(f"[bold green]Starting Claude Code in {sandbox_name}...[/bold green]")
             console.print("[dim]Installing dependencies and starting Claude...[/dim]")
-            cmd = ["docker", "compose", "-p", sandbox_name, "run", "--rm", "--service-ports", "dev"]
+            cmd = [
+                "docker", "compose", "-p", compose_project_name(sandbox_name),
+                "run", "--rm", "--service-ports", "dev",
+            ]
 
         console.print()
 
@@ -580,7 +565,7 @@ def run(
 
     sandbox_name = name or mount_specs[0].host_path.name
 
-    output_path = _get_sandbox_dir(sandbox_name) if output is None else Path(output).resolve()
+    output_path = get_sandbox_dir(sandbox_name) if output is None else Path(output).resolve()
 
     if python_version is None:
         detected = _detect_python_version(mount_specs[0].host_path)
@@ -588,7 +573,7 @@ def run(
             python_version = detected
             console.print(f"[dim]Detected Python:[/dim] {python_version}")
 
-    config = _load_profile(profile)
+    config = load_profile_by_name(profile)
 
     if python_version:
         config.python.version = python_version
@@ -666,7 +651,7 @@ def attach_sandbox(name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -686,7 +671,7 @@ def attach_sandbox(name: str | None) -> None:
     # Use docker compose exec with interactive TTY
     os.execvp(
         "docker",
-        ["docker", "compose", "-p", name, "exec", "-it", "dev", "/bin/zsh"],
+        ["docker", "compose", "-p", compose_project_name(name), "exec", "-it", "dev", "/bin/zsh"],
     )
 
 
@@ -700,7 +685,7 @@ def stop_sandbox(name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -745,7 +730,7 @@ def start_sandbox(name: str | None, detach: bool, shell: bool) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
@@ -781,7 +766,7 @@ def cd_sandbox(name: str | None) -> None:
     if name is None:
         name = Path.cwd().name
 
-    sandbox_dir = _get_sandbox_dir(name)
+    sandbox_dir = get_sandbox_dir(name)
 
     if not sandbox_dir.exists():
         console.print(f"[red]Sandbox not found:[/red] {name}")
