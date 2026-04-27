@@ -101,7 +101,7 @@ class TestComputeBuildHash:
         profile = ProfileConfig(name="test")
         hash_result = compute_build_hash(profile)
         assert isinstance(hash_result, str)
-        assert len(hash_result) == 32  # MD5 hex digest length
+        assert len(hash_result) == 64  # SHA-256 hex digest length
 
     def test_same_profile_same_hash(self) -> None:
         """Same profile should produce same hash."""
@@ -186,10 +186,11 @@ class TestDevEnvGenerator:
             output_path = Path(tmpdir)
             generated = generator.generate(output_path)
 
-            assert len(generated) == 7
+            assert len(generated) == 8
 
             # Check files exist
             assert (output_path / ".devcontainer" / "Dockerfile").exists()
+            assert (output_path / ".devcontainer" / "devenv-start.sh").exists()
             assert (output_path / "docker-compose.yml").exists()
             assert (output_path / ".devcontainer" / "devcontainer.json").exists()
             assert (output_path / ".devcontainer" / "init-env.sh").exists()
@@ -589,12 +590,90 @@ class TestSandboxGenerator:
         generated = generator.generate(tmp_path)
 
         # Check files were created
-        assert len(generated) >= 4
+        assert len(generated) >= 5
         assert (tmp_path / ".devcontainer" / "Dockerfile").exists()
+        assert (tmp_path / ".devcontainer" / "devenv-start.sh").exists()
         assert (tmp_path / "docker-compose.yml").exists()
         assert (tmp_path / ".env.example").exists()
         assert (tmp_path / ".sops.yaml").exists()
         assert (tmp_path / ".devcontainer" / ".build-hash").exists()
+
+    def test_generate_produces_devenv_start_script(
+        self, profile: ProfileConfig, mounts: list, tmp_path: Path
+    ) -> None:
+        """SandboxGenerator.generate() produces devenv-start.sh in output dir."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        generator.generate(tmp_path)
+
+        devenv_start = tmp_path / ".devcontainer" / "devenv-start.sh"
+        assert devenv_start.exists()
+        assert devenv_start.stat().st_mode & 0o100  # Has execute bit
+
+    def test_devenv_start_contains_expected_sections(
+        self, profile: ProfileConfig, mounts: list, tmp_path: Path
+    ) -> None:
+        """Rendered devenv-start.sh contains expected sections."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        generator.generate(tmp_path)
+
+        content = (tmp_path / ".devcontainer" / "devenv-start.sh").read_text()
+
+        assert "#!/bin/bash" in content
+        # Claude config copy section
+        assert ".claude-host" in content
+        # MCP merge section
+        assert ".claude.json-host" in content
+        assert "mcpServers" in content
+
+    def test_devenv_start_contains_ssh_section_when_enabled(
+        self, tmp_path: Path
+    ) -> None:
+        """Rendered devenv-start.sh contains SSH setup when ssh_keys is enabled."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import MountsConfig, MountSpec
+
+        profile = ProfileConfig(
+            name="ssh-test",
+            mounts=MountsConfig(ssh_keys=True),
+        )
+        mounts = [MountSpec(host_path=Path("/home/user/project"), mode="rw")]
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        generator.generate(tmp_path)
+
+        content = (tmp_path / ".devcontainer" / "devenv-start.sh").read_text()
+        assert ".ssh-host" in content
+
+    def test_dockerfile_contains_copy_devenv_start(
+        self, profile: ProfileConfig, mounts: list, tmp_path: Path
+    ) -> None:
+        """Rendered Dockerfile contains COPY devenv-start.sh line."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=mounts,
+            sandbox_name="test-sandbox",
+        )
+        generator.generate(tmp_path)
+
+        content = (tmp_path / ".devcontainer" / "Dockerfile").read_text()
+        assert "COPY devenv-start.sh /usr/local/bin/devenv-start" in content
 
     def test_sandbox_with_cow_mount(self, profile: ProfileConfig) -> None:
         """Should handle copy-on-write mounts."""
@@ -661,6 +740,19 @@ class TestChezmoi:
 
         assert "get.chezmoi.io" not in content
         assert "chezmoi init" not in content
+
+    def test_devenv_start_runs_chezmoi_init_when_repo_set(self) -> None:
+        """Rendered devenv-start.sh runs chezmoi init --apply --exclude=scripts when repo is set."""
+        from mirustech.devenv_generator.models import DotfilesConfig
+
+        profile = ProfileConfig(
+            name="chezmoi-test",
+            dotfiles=DotfilesConfig(chezmoi_repo="https://github.com/user/dotfiles"),
+        )
+        generator = DevEnvGenerator(profile)
+        content = generator.render_devenv_start_script()
+
+        assert "chezmoi init --apply --exclude=scripts https://github.com/user/dotfiles" in content
 
     def test_sandbox_compose_mounts_age_key_when_enabled(self) -> None:
         """Generated docker-compose mounts age key when dotfiles.chezmoi_age_key is true."""

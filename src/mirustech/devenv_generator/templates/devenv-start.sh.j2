@@ -1,0 +1,381 @@
+#!/bin/bash
+set -e
+
+# Fix MCP plugin paths: Claude plugins store absolute host paths that don't exist in container
+# Create symlink so /Users/<host-user>/.claude -> /home/developer/.claude
+MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
+if [ -f "$MARKETPLACES_JSON" ]; then
+    # Extract host username from installLocation path (e.g., /Users/ziefle/.claude/...)
+    HOST_USER=$(grep -o '"/Users/[^/]*/' "$MARKETPLACES_JSON" 2>/dev/null | head -1 | sed 's|"/Users/||;s|/$||')
+    if [ -n "$HOST_USER" ] && [ "$HOST_USER" != "developer" ]; then
+        echo "Creating symlink for MCP plugin paths: /Users/$HOST_USER -> /home/developer"
+        mkdir -p /Users 2>/dev/null || true
+        ln -sfn /home/developer "/Users/$HOST_USER" 2>/dev/null || true
+    fi
+fi
+
+{% if profile.mounts.ssh_keys %}
+# Copy SSH keys and config from read-only mount to writable directory
+if [ -d /home/developer/.ssh-host ]; then
+    echo "Setting up SSH from host..."
+    # Create writable .ssh directory and sockets subdirectory
+    mkdir -p /home/developer/.ssh/sockets
+    chmod 700 /home/developer/.ssh
+    chmod 700 /home/developer/.ssh/sockets
+
+    # Copy all SSH keys and known_hosts from host
+    if [ -n "$(ls -A /home/developer/.ssh-host 2>/dev/null)" ]; then
+        # Copy all files except config and sockets (we'll handle those specially)
+        for file in /home/developer/.ssh-host/*; do
+            filename=$(basename "$file")
+            if [ "$filename" != "config" ] && [ "$filename" != "sockets" ]; then
+                cp -r "$file" /home/developer/.ssh/
+            fi
+        done
+
+        # Set proper permissions for keys
+        chmod 600 /home/developer/.ssh/id_* 2>/dev/null || true
+        chmod 644 /home/developer/.ssh/*.pub 2>/dev/null || true
+        chmod 644 /home/developer/.ssh/known_hosts* 2>/dev/null || true
+    fi
+
+    # Handle SSH config: copy from host and strip problematic directives
+    if [ -f /home/developer/.ssh-host/config ]; then
+        # Copy host config but remove ControlPath/ControlMaster directives that point to non-writable locations
+        # We'll add our own at the end to ensure they take precedence
+        grep -v '^\s*ControlPath' /home/developer/.ssh-host/config | \
+            grep -v '^\s*ControlMaster' | \
+            grep -v '^\s*ControlPersist' > /home/developer/.ssh/config 2>/dev/null || true
+
+        # Add our own ControlPath settings at the end (these take precedence over earlier Host * blocks)
+        cat >> /home/developer/.ssh/config << 'SSHCONF'
+
+# Container override: use writable socket directory
+Host *
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlMaster auto
+  ControlPersist 10m
+SSHCONF
+        chmod 644 /home/developer/.ssh/config
+    else
+        # No host config - create default with ControlPath
+        cat > /home/developer/.ssh/config << 'SSHCONF'
+Host *
+  ControlPath ~/.ssh/sockets/%r@%h-%p
+  ControlMaster auto
+  ControlPersist 10m
+SSHCONF
+        chmod 644 /home/developer/.ssh/config
+    fi
+
+    echo "  SSH setup complete (sockets in ~/.ssh/sockets/)"
+fi
+{% endif %}
+
+# Copy useful files from host Claude config (if mounted at .claude-host)
+# This preserves sandbox's permissive settings.json while getting auth, CLAUDE.md, etc.
+if [ -d /home/developer/.claude-host ]; then
+    # Copy credentials (auth token from 'claude login' or keychain export)
+    if [ -f /home/developer/.claude-host/.credentials.json ]; then
+        cp /home/developer/.claude-host/.credentials.json /home/developer/.claude/
+
+        # Attempt to refresh expired OAuth token using refresh_token
+        python3 << 'TOKENREFRESH' 2>/dev/null || true
+import json, time, urllib.request, urllib.parse
+
+creds_path = '/home/developer/.claude/.credentials.json'
+with open(creds_path) as f:
+    creds = json.load(f)
+
+oauth = creds.get('claudeAiOauth', {})
+expires_at = oauth.get('expiresAt', 0)
+refresh_token = oauth.get('refreshToken', '')
+
+# Only refresh if token is expired or expires within 5 minutes
+if refresh_token and (expires_at / 1000) < (time.time() + 300):
+    print("OAuth token expired or expiring soon, refreshing...")
+    data = urllib.parse.urlencode({
+        'grant_type': 'refresh_token',
+        'refresh_token': refresh_token,
+    }).encode()
+    req = urllib.request.Request(
+        'https://claude.ai/api/oauth/token',
+        data=data,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+        oauth['accessToken'] = result['access_token']
+        oauth['refreshToken'] = result.get('refresh_token', refresh_token)
+        oauth['expiresAt'] = int((time.time() + result.get('expires_in', 86400)) * 1000)
+        creds['claudeAiOauth'] = oauth
+        with open(creds_path, 'w') as f:
+            json.dump(creds, f)
+        print(f"  Token refreshed, new expiry: {time.ctime(oauth['expiresAt']/1000)}")
+    except Exception as e:
+        print(f"  Token refresh failed: {e}")
+        print("  You may need to run /login manually")
+else:
+    print("OAuth token still valid, no refresh needed")
+TOKENREFRESH
+    fi
+    # Copy global CLAUDE.md if it exists
+    if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
+        cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
+    fi
+    # Copy MCP plugins directory, filtering out external plugins that need auth
+    # tokens unavailable in the container (OAuth, API keys, etc.)
+    if [ -d /home/developer/.claude-host/plugins ]; then
+        echo "Copying MCP plugins from host..."
+        # Copy everything except external_plugins (we'll filter those)
+        mkdir -p /home/developer/.claude/plugins
+        # Copy top-level files (blocklist.json, known_marketplaces.json, etc.)
+        find /home/developer/.claude-host/plugins -maxdepth 1 -type f -exec cp {} /home/developer/.claude/plugins/ \;
+        # Copy non-external marketplace content (built-in plugins)
+        if [ -d /home/developer/.claude-host/plugins/marketplaces ]; then
+            for marketplace_dir in /home/developer/.claude-host/plugins/marketplaces/*; do
+                mp_name=$(basename "$marketplace_dir")
+                # Copy plugins subdir (built-in plugins, no auth needed)
+                if [ -d "$marketplace_dir/plugins" ]; then
+                    mkdir -p "/home/developer/.claude/plugins/marketplaces/$mp_name"
+                    cp -r "$marketplace_dir/plugins" "/home/developer/.claude/plugins/marketplaces/$mp_name/"
+                fi
+                # Selectively copy external plugins — skip ones needing auth tokens
+                if [ -d "$marketplace_dir/external_plugins" ]; then
+                    mkdir -p "/home/developer/.claude/plugins/marketplaces/$mp_name/external_plugins"
+                    for plugin_dir in "$marketplace_dir/external_plugins"/*/; do
+                        plugin_name=$(basename "$plugin_dir")
+                        mcp_json="$plugin_dir/.mcp.json"
+                        if [ -f "$mcp_json" ]; then
+                            # Skip plugins that reference auth tokens or OAuth
+                            if grep -qE 'Authorization|API_KEY|TOKEN|"oauth"' "$mcp_json" 2>/dev/null; then
+                                echo "  Skipping $plugin_name (needs auth token)"
+                                continue
+                            fi
+                            # Skip HTTP/SSE plugins without local command (need browser OAuth)
+                            if grep -q '"type": "http"\|"type": "sse"' "$mcp_json" 2>/dev/null; then
+                                if ! grep -q '"command"' "$mcp_json" 2>/dev/null; then
+                                    echo "  Skipping $plugin_name (needs browser OAuth)"
+                                    continue
+                                fi
+                            fi
+                        fi
+                        cp -r "$plugin_dir" "/home/developer/.claude/plugins/marketplaces/$mp_name/external_plugins/"
+                        echo "  Copied $plugin_name"
+                    done
+                fi
+                # Copy any other files in marketplace dir (metadata, etc.)
+                find "$marketplace_dir" -maxdepth 1 -type f -exec cp {} "/home/developer/.claude/plugins/marketplaces/$mp_name/" \; 2>/dev/null
+            done
+        fi
+
+        # Fix absolute paths in known_marketplaces.json (host paths don't exist in container)
+        MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
+        if [ -f "$MARKETPLACES_JSON" ]; then
+            echo "Fixing marketplace paths for container..."
+            # Replace any /Users/<username>/.claude with /home/developer/.claude
+            sed -i 's|/Users/[^/]*/\.claude|/home/developer/.claude|g' "$MARKETPLACES_JSON"
+        fi
+
+        # List copied MCP servers for debugging
+        echo "MCP servers copied:"
+        find /home/developer/.claude/plugins -name ".mcp.json" -exec echo "  {}" \;
+
+    fi
+    # Copy projects directory (per-project CLAUDE.md, memory files) if it exists
+    # Use -n (no-clobber) to preserve sandbox-created memory files across restarts
+    if [ -d /home/developer/.claude-host/projects ]; then
+        cp -rn /home/developer/.claude-host/projects /home/developer/.claude/
+    fi
+    # Copy agents directory (custom agents) if it exists
+    if [ -d /home/developer/.claude-host/agents ]; then
+        echo "Copying custom agents from host..."
+        cp -r /home/developer/.claude-host/agents /home/developer/.claude/
+    fi
+    # Copy skills directory (custom skills) if it exists
+    if [ -d /home/developer/.claude-host/skills ]; then
+        echo "Copying custom skills from host..."
+        cp -r /home/developer/.claude-host/skills /home/developer/.claude/
+    fi
+    # Copy output-styles directory (custom output styles) if it exists
+    if [ -d /home/developer/.claude-host/output-styles ]; then
+        echo "Copying custom output styles from host..."
+        cp -r /home/developer/.claude-host/output-styles /home/developer/.claude/
+    fi
+fi
+
+# Copy Happy Coder config from host (if mounted at .happy-host)
+# Only copy credentials and settings — skip host-specific runtime state
+# (daemon.state.json, lock files, logs, tmp) which would confuse the
+# container's own Happy Coder daemon.
+if [ -d /home/developer/.happy-host ]; then
+    echo "Copying Happy Coder config from host..."
+    copied=0
+    for f in access.key settings.json; do
+        if [ -f "/home/developer/.happy-host/$f" ]; then
+            cp -a "/home/developer/.happy-host/$f" "/home/developer/.happy/$f"
+            chmod u+w "/home/developer/.happy/$f"
+            copied=$((copied + 1))
+        fi
+    done
+    if [ "$copied" -gt 0 ]; then
+        echo "  Copied $copied config files (access.key, settings.json)"
+    else
+        echo "  Warning: no Happy Coder config files found on host"
+    fi
+fi
+
+# Copy MCP servers from host's .claude.json to container's .claude.json
+# This is needed because MCP servers are stored in ~/.claude.json, not ~/.claude/
+if [ -f /home/developer/.claude.json-host ]; then
+    echo "Merging MCP servers from host config..."
+    # Find first workspace project for Serena auto-activation
+    FIRST_PROJECT=""
+    for dir in /workspace/*; do
+        if [ -d "$dir" ]; then
+            FIRST_PROJECT="$dir"
+            break
+        fi
+    done
+    export FIRST_PROJECT
+
+    python3 << 'PYMCP' 2>/dev/null || true
+import json
+import os
+
+host_config = '/home/developer/.claude.json-host'
+container_config = '/home/developer/.claude.json'
+first_project = os.environ.get('FIRST_PROJECT', '/workspace')
+
+# Read host config
+with open(host_config) as f:
+    host_data = json.load(f)
+
+# Read or create container config
+try:
+    with open(container_config) as f:
+        container_data = json.load(f)
+except Exception:
+    container_data = {"hasCompletedOnboarding": True, "theme": "dark"}
+
+# Copy MCP servers from host (user-scoped, global)
+if 'mcpServers' in host_data and host_data['mcpServers']:
+    servers = host_data['mcpServers'].copy()
+
+    # Fix Serena --project path: replace host path with container workspace path
+    if 'serena' in servers:
+        serena = servers['serena']
+        if 'args' in serena:
+            args = serena['args']
+            # Find and replace --project argument
+            for i, arg in enumerate(args):
+                if arg == '--project' and i + 1 < len(args):
+                    old_path = args[i + 1]
+                    args[i + 1] = first_project
+                    print(f"  Fixed Serena project: {old_path} -> {first_project}")
+                    break
+
+    container_data['mcpServers'] = servers
+    print(f"  Copied {len(servers)} MCP servers: {list(servers.keys())}")
+
+# Inject profile-configured MCP servers into global config
+# These go in ~/.claude.json so they're available from ANY workspace
+if 'mcpServers' not in container_data:
+    container_data['mcpServers'] = {}
+
+{% if profile.mcp.enable_context7 %}
+# Context7 - library documentation MCP (profile: enable_context7)
+if 'context7' not in container_data['mcpServers']:
+    container_data['mcpServers']['context7'] = {
+        "command": "npx",
+        "args": ["-y", "@upstash/context7-mcp"]
+    }
+    print("  Added context7 MCP server (from profile)")
+{% endif %}
+
+{% if profile.mcp.enable_serena %}
+# Serena HTTP MCP (profile: enable_serena)
+serena_url = os.environ.get('SERENA_MCP_URL', '')
+if serena_url and 'serena' not in container_data['mcpServers']:
+    container_data['mcpServers']['serena'] = {
+        "type": "http",
+        "url": serena_url
+    }
+    print(f"  Added Serena HTTP MCP server: {serena_url} (from profile)")
+{% endif %}
+
+# Write merged config
+with open(container_config, 'w') as f:
+    json.dump(container_data, f, indent=2)
+PYMCP
+fi
+
+# Set up GPG agent socket forwarding from host (if GPG_AGENT_PORT is set)
+if [ -n "$GPG_AGENT_PORT" ]; then
+    # Create a writable GPG home directory
+    GPG_HOME="/tmp/gnupg-runtime"
+    mkdir -p "$GPG_HOME"
+    chmod 700 "$GPG_HOME"
+
+    # Copy gpg.conf but remove agent-program line and add no-autostart
+    if [ -f /home/developer/.gnupg/gpg.conf ]; then
+        grep -v '^agent-program' /home/developer/.gnupg/gpg.conf > "$GPG_HOME/gpg.conf" 2>/dev/null || true
+    fi
+    echo "no-autostart" >> "$GPG_HOME/gpg.conf"
+
+    # Link the keyrings from the mounted directory
+    ln -sf /home/developer/.gnupg/pubring.kbx "$GPG_HOME/" 2>/dev/null || true
+    ln -sf /home/developer/.gnupg/trustdb.gpg "$GPG_HOME/" 2>/dev/null || true
+    ln -sf /home/developer/.gnupg/private-keys-v1.d "$GPG_HOME/" 2>/dev/null || true
+
+    # Remove any existing socket
+    rm -f "$GPG_HOME/S.gpg-agent" 2>/dev/null || true
+
+    # Start socat to bridge host GPG agent to local socket
+    socat UNIX-LISTEN:"$GPG_HOME/S.gpg-agent",fork,mode=600 \
+        TCP:host.docker.internal:"$GPG_AGENT_PORT" &
+
+    # Set GNUPGHOME so GPG uses our directory with the forwarded socket
+    export GNUPGHOME="$GPG_HOME"
+
+    echo "GPG agent forwarding enabled on port $GPG_AGENT_PORT"
+    sleep 0.5  # Give socat time to start
+fi
+
+{% if profile.dotfiles.chezmoi_repo %}
+# chezmoi: apply config files only (--exclude=scripts skips run_once_/run_onchange_ install scripts).
+# Package installation is the Dockerfile's responsibility; chezmoi handles only user-facing configuration.
+if command -v chezmoi &> /dev/null; then
+    chezmoi init --apply --exclude=scripts {{ profile.dotfiles.chezmoi_repo }}
+fi
+{% endif %}
+
+# Install dependencies in the primary project (working directory set by docker-compose)
+dir="$(pwd)"
+if [ -f "$dir/pyproject.toml" ]; then
+    # Check for stale .venv (symlinks to non-existent Python from host)
+    if [ -d "$dir/.venv" ]; then
+        VENV_PYTHON="$dir/.venv/bin/python"
+        if [ -L "$VENV_PYTHON" ] && [ ! -e "$VENV_PYTHON" ]; then
+            echo "Detected stale .venv (host Python not available), removing..."
+            rm -rf "$dir/.venv"
+        fi
+    fi
+
+    echo "Installing dependencies in $dir..."
+    uv sync --quiet 2>/dev/null || true
+fi
+
+# Activate project venv so Claude/skills have access to project dependencies (e.g. pydantic)
+if [ -d "$dir/.venv/bin" ]; then
+    export VIRTUAL_ENV="$dir/.venv"
+    export PATH="$dir/.venv/bin:$PATH"
+fi
+
+# If no command provided, start Claude in YOLO mode
+if [ $# -eq 0 ]; then
+    exec claude --permission-mode bypassPermissions
+else
+    exec "$@"
+fi

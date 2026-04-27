@@ -141,9 +141,11 @@ def compute_build_hash(profile: ProfileConfig) -> str:
         profile: Profile configuration to hash.
 
     Returns:
-        MD5 hash hex string.
+        SHA-256 hex digest (64 characters).
     """
-    hasher = hashlib.md5()
+    # sha256: identical performance for small inputs (config strings);
+    # md5 triggers security scanner false positives in CI.
+    hasher = hashlib.sha256()
 
     # Hash the profile data (serialize to JSON for deterministic ordering)
     profile_dict = profile.model_dump(mode="json")
@@ -158,6 +160,10 @@ def compute_build_hash(profile: ProfileConfig) -> str:
     # Hash the docker-compose template content
     compose_template = templates_dir.joinpath("docker-compose.sandbox.yml.j2").read_text()
     hasher.update(compose_template.encode("utf-8"))
+
+    # Hash the entrypoint script template (extracted from Dockerfile.j2 in M6)
+    devenv_start_template = templates_dir.joinpath("devenv-start.sh.j2").read_text()
+    hasher.update(devenv_start_template.encode("utf-8"))
 
     return hasher.hexdigest()
 
@@ -197,6 +203,15 @@ class DevEnvGenerator:
             Rendered Dockerfile content.
         """
         template = self.env.get_template("Dockerfile.j2")
+        return template.render(profile=self.profile, project_name=self.project_name)
+
+    def render_devenv_start_script(self) -> str:
+        """Render the devenv-start.sh entrypoint script template.
+
+        Returns:
+            Rendered devenv-start.sh content.
+        """
+        template = self.env.get_template("devenv-start.sh.j2")
         return template.render(profile=self.profile, project_name=self.project_name)
 
     def render_docker_compose(self) -> str:
@@ -359,6 +374,13 @@ creation_rules:
         generated_files.append(dockerfile_path)
         self.logger.info("generated_file", path=str(dockerfile_path))
 
+        # devenv-start.sh (must be co-located with Dockerfile for COPY instruction)
+        devenv_start_path = devcontainer_dir / "devenv-start.sh"
+        devenv_start_path.write_text(self.render_devenv_start_script())
+        devenv_start_path.chmod(0o755)
+        generated_files.append(devenv_start_path)
+        self.logger.info("generated_file", path=str(devenv_start_path))
+
         # docker-compose.yml (in project root)
         compose_path = output_dir / "docker-compose.yml"
         compose_path.write_text(self.render_docker_compose())
@@ -493,6 +515,15 @@ class SandboxGenerator:
         template = self.env.get_template("Dockerfile.j2")
         return template.render(profile=self.profile, project_name=self.sandbox_name)
 
+    def render_devenv_start_script(self) -> str:
+        """Render the devenv-start.sh entrypoint script template.
+
+        Returns:
+            Rendered devenv-start.sh content.
+        """
+        template = self.env.get_template("devenv-start.sh.j2")
+        return template.render(profile=self.profile, project_name=self.sandbox_name)
+
     def render_env_example(self) -> str:
         """Render the .env.example file.
 
@@ -574,6 +605,13 @@ creation_rules:
         dockerfile_path.write_text(self.render_dockerfile())
         generated_files.append(dockerfile_path)
         self.logger.info("generated_file", path=str(dockerfile_path))
+
+        # devenv-start.sh (must be co-located with Dockerfile for COPY instruction)
+        devenv_start_path = devcontainer_dir / "devenv-start.sh"
+        devenv_start_path.write_text(self.render_devenv_start_script())
+        devenv_start_path.chmod(0o755)
+        generated_files.append(devenv_start_path)
+        self.logger.info("generated_file", path=str(devenv_start_path))
 
         # docker-compose.yml (in sandbox root)
         compose_path = output_dir / "docker-compose.yml"
