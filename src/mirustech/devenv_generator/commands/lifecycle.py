@@ -735,7 +735,13 @@ def stop_sandbox(name: str | None) -> None:
     default=False,
     help="Drop to shell instead of starting Claude",
 )
-def start_sandbox(name: str | None, detach: bool, shell: bool) -> None:
+@click.option(
+    "--no-cache",
+    is_flag=True,
+    default=False,
+    help="Force rebuild without Docker cache",
+)
+def start_sandbox(name: str | None, detach: bool, shell: bool, no_cache: bool) -> None:
     """Start an existing sandbox without regenerating config.
 
     If no name is provided, starts the sandbox matching the current directory name.
@@ -766,8 +772,26 @@ def start_sandbox(name: str | None, detach: bool, shell: bool) -> None:
         console.print(f"Attach with: devenv attach {name}")
         raise SystemExit(1)
 
+    # Host-side setup using profile defaults
+    config = load_profile_by_name("default")
+
+    if config.mcp.enable_serena:
+        _start_serena_server(
+            port=config.mcp.serena_port, no_browser=not config.mcp.serena_browser
+        )
+    _start_gpg_forwarder()
+    _export_keychain_credentials()
+
     console.print(f"[bold green]Starting {name}...[/bold green]")
-    _run_sandbox(name, sandbox_dir, detach=detach, shell=shell, skip_build=False, no_cache=False)
+    _run_sandbox(
+        name,
+        sandbox_dir,
+        detach=detach,
+        shell=shell,
+        skip_build=False,
+        serena_port=config.mcp.serena_port if config.mcp.enable_serena else None,
+        no_cache=no_cache,
+    )
 
 
 @click.command("cd")

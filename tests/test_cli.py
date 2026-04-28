@@ -316,6 +316,22 @@ class TestVersionCommand:
         assert "version" in result.output.lower()
 
 
+class TestStartCommand:
+    """Tests for the start command."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_start_help_shows_options(self, runner: CliRunner) -> None:
+        """Help text includes expected options."""
+        result = runner.invoke(main, ["start", "--help"])
+        assert "--no-cache" in result.output
+        assert "--detach" in result.output
+        assert "--shell" in result.output
+
+
 class TestProfilesCommand:
     """Tests for profiles commands."""
 
