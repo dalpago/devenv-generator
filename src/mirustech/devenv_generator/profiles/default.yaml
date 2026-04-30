@@ -75,7 +75,6 @@ github_releases:
 
 node_packages:
   - "@anthropic-ai/claude-code"
-  - "happy-coder"
 
 environment: {}
 
