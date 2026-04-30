@@ -96,6 +96,14 @@ mounts:
 # Enable Playwright browser dependencies for frontend testing
 playwright: true
 
+# Build and install the mirus-tech `tea` CLI fork (Gitea/Forgejo CLI) from local source
+tea_cli: true
+tea_cli_path: ~/Code/Projects/tea-mirus
+
+# Build and install the mirus-tech `tea` CLI fork (Gitea/Forgejo CLI)
+tea_cli: true
+tea_cli_ref: main
+
 shell:
   starship: true
   starship_preset: "catppuccin-powerline"

@@ -35,3 +35,6 @@ ports:
       host: 5173
       protocol: tcp
       description: Vite (alternative port)  # Vite fallback when 3000 in use
+# Build and install the mirus-tech `tea` CLI fork (Gitea/Forgejo CLI) from local source
+tea_cli: true
+tea_cli_path: ~/Code/Projects/tea-mirus

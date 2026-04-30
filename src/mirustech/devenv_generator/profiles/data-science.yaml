@@ -32,3 +32,6 @@ ports:
       host: 8888
       protocol: tcp
       description: Jupyter notebook server  # Standard Jupyter port
+# Build and install the mirus-tech `tea` CLI fork (Gitea/Forgejo CLI) from local source
+tea_cli: true
+tea_cli_path: ~/Code/Projects/tea-mirus

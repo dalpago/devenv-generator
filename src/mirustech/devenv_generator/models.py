@@ -181,6 +181,17 @@ class ProfileConfig(BaseModel):
         description="Install Playwright browser dependencies "
         "(Chromium, Firefox, WebKit system libraries)",
     )
+    tea_cli: bool = Field(
+        default=False,
+        description="Build and install the mirus-tech `tea` CLI fork "
+        "(Gitea/Forgejo CLI) via a multi-stage Go build using the local source tree",
+    )
+    tea_cli_path: str = Field(
+        default="~/Code/Projects/tea-mirus",
+        description="Host path to the tea CLI source tree; passed to docker build "
+        "as an additional context so the working tree (including uncommitted changes) "
+        "is built into the container",
+    )
     ports: PortsConfig = Field(
         default_factory=PortsConfig,
         description="Port mappings to expose from container to host",

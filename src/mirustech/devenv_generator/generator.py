@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import os
 import re
+import sys
 from importlib.resources import files
 from pathlib import Path
 
@@ -11,6 +13,20 @@ import yaml
 from jinja2 import Environment, PackageLoader
 
 from mirustech.devenv_generator.models import ImageSpec, MountSpec, ProfileConfig
+
+
+def host_tea_config_dir() -> Path:
+    """Tea CLI's host-side config dir, matching Go's os.UserConfigDir().
+
+    macOS: ~/Library/Application Support/tea
+    Linux/other: $XDG_CONFIG_HOME/tea, defaulting to ~/.config/tea
+    """
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "tea"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "tea"
+
 
 logger = structlog.get_logger()
 
@@ -237,9 +253,7 @@ class BaseGenerator:
         # Embed host's starship.toml so the container's prompt mirrors the host's
         # exact configuration (presets miss user customisations like newline-after-bar).
         host_starship_path = Path.home() / ".config" / "starship.toml"
-        host_starship_toml = (
-            host_starship_path.read_text() if host_starship_path.is_file() else ""
-        )
+        host_starship_toml = host_starship_path.read_text() if host_starship_path.is_file() else ""
         return template.render(
             profile=self.profile,
             project_name=self.project_name,
@@ -527,6 +541,7 @@ class SandboxGenerator(BaseGenerator):
             docker_gid=docker_gid,
             user_uid=user_uid,
             user_gid=user_gid,
+            tea_config_host_path=str(host_tea_config_dir()),
         )
 
     def render_env_example(self) -> str:

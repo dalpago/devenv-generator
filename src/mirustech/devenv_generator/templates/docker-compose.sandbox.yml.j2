@@ -23,6 +23,12 @@ services:
     build:
       context: .devcontainer
       dockerfile: Dockerfile
+{% if profile.tea_cli %}
+      # Pass the host's tea source tree as an additional build context so the
+      # builder stage builds whatever is currently in the working tree.
+      additional_contexts:
+        tea-src: {{ profile.tea_cli_path | replace('~', '${HOME}') }}
+{% endif %}
       args:
         USER_UID: {{ user_uid }}
         USER_GID: {{ user_gid }}
@@ -56,6 +62,14 @@ services:
 {% if profile.mounts.happy_config %}
       # Happy Coder mobile client config (read-only, copied at runtime)
       - ~/.happy:/home/developer/.happy-host:ro
+{% endif %}
+{% if profile.tea_cli %}
+      # tea CLI config (PAT, login state). Host source is platform-correct
+      # (macOS: ~/Library/Application Support/tea; Linux: ~/.config/tea), container
+      # target is always ~/.config/tea since the in-container Linux Go runtime
+      # resolves UserConfigDir() to $HOME/.config. Read-write so `tea login add`
+      # in either direction persists.
+      - {{ tea_config_host_path }}:/home/developer/.config/tea
 {% endif %}
 {% if profile.dotfiles.chezmoi_age_key %}
       # chezmoi_age_key: age key is host-local (not in dotfiles repo for security);

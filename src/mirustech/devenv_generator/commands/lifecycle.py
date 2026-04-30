@@ -20,6 +20,7 @@ from mirustech.devenv_generator.commands.management import (
     _force_cleanup_project_containers,
     _is_sandbox_running,
 )
+from mirustech.devenv_generator.generator import host_tea_config_dir
 from mirustech.devenv_generator.models import MountSpec, PortConfig
 from mirustech.devenv_generator.settings import get_settings
 from mirustech.devenv_generator.utils.process_manager import ProcessManager
@@ -370,6 +371,11 @@ def _run_sandbox(
     if not _ensure_docker_running():
         console.print("[red]Docker is not available. Please start Docker.[/red]")
         raise SystemExit(1)
+
+    # Pre-create host dirs that compose bind-mounts. Docker would otherwise auto-create
+    # them as root-owned, leaving the in-container user unable to write — e.g. tea login
+    # state at the platform-correct config dir (macOS: ~/Library/Application Support/tea).
+    host_tea_config_dir().mkdir(parents=True, exist_ok=True)
 
     if not skip_build:
         console.print("[dim]Building container...[/dim]")
