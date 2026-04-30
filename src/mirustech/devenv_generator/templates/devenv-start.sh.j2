@@ -388,6 +388,16 @@ if command -v chezmoi &> /dev/null; then
 fi
 {% endif %}
 
+{% if host_starship_toml %}
+# Overwrite the preset-baked starship config with the host's exact ~/.config/starship.toml,
+# embedded at devenv-generation time. This preserves user customisations (e.g. add_newline,
+# format tweaks) that presets do not capture.
+mkdir -p /home/developer/.config
+cat > /home/developer/.config/starship.toml << 'STARSHIPHOSTCONFIG'
+{{ host_starship_toml }}
+STARSHIPHOSTCONFIG
+{% endif %}
+
 # Install dependencies in the primary project (working directory set by docker-compose)
 dir="$(pwd)"
 if [ -f "$dir/pyproject.toml" ]; then

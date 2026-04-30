@@ -234,7 +234,17 @@ class BaseGenerator:
             Rendered devenv-start.sh content.
         """
         template = self.env.get_template("devenv-start.sh.j2")
-        return template.render(profile=self.profile, project_name=self.project_name)
+        # Embed host's starship.toml so the container's prompt mirrors the host's
+        # exact configuration (presets miss user customisations like newline-after-bar).
+        host_starship_path = Path.home() / ".config" / "starship.toml"
+        host_starship_toml = (
+            host_starship_path.read_text() if host_starship_path.is_file() else ""
+        )
+        return template.render(
+            profile=self.profile,
+            project_name=self.project_name,
+            host_starship_toml=host_starship_toml,
+        )
 
     def render_env_example(self) -> str:
         """Render the .env.example file.
