@@ -68,8 +68,13 @@ def _update_compose_ports(
     console.print("[dim]Updating container with new port mappings...[/dim]")
     result = run_command(
         [
-            "docker", "compose", "-p", compose_project_name(sandbox_name),
-            "up", "-d", "--force-recreate",
+            "docker",
+            "compose",
+            "-p",
+            compose_project_name(sandbox_name),
+            "up",
+            "-d",
+            "--force-recreate",
         ],
         cwd=sandbox_dir,
         timeout=60,
@@ -165,8 +170,15 @@ def list_ports(name: str | None) -> None:
     # Get ports from docker inspect
     result = run_command(
         [
-            "docker", "compose", "-p", compose_project_name(name),
-            "ps", "--format", "json", "--status", "running",
+            "docker",
+            "compose",
+            "-p",
+            compose_project_name(name),
+            "ps",
+            "--format",
+            "json",
+            "--status",
+            "running",
         ],
         cwd=sandbox_dir,
     )
@@ -292,8 +304,13 @@ def unexpose_port(container_ports: tuple[int, ...], name: str | None) -> None:
         console.print("[dim]Updating container...[/dim]")
         result = run_command(
             [
-                "docker", "compose", "-p", compose_project_name(name),
-                "up", "-d", "--force-recreate",
+                "docker",
+                "compose",
+                "-p",
+                compose_project_name(name),
+                "up",
+                "-d",
+                "--force-recreate",
             ],
             cwd=sandbox_dir,
             timeout=60,

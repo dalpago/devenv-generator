@@ -485,7 +485,8 @@ def fix_docker_running() -> tuple[bool, str]:
             success = wait_with_exponential_backoff(
                 check_fn=lambda: subprocess.run(
                     ["docker", "info"], capture_output=True, timeout=10
-                ).returncode == 0,
+                ).returncode
+                == 0,
                 max_wait=40,
                 max_delay=16,
             )

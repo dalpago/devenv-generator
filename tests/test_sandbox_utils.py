@@ -1,6 +1,5 @@
 """Tests for shared sandbox utility functions."""
 
-
 import pytest
 
 from mirustech.devenv_generator.models import ProfileConfig

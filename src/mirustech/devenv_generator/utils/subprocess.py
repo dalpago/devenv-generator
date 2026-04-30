@@ -7,7 +7,8 @@ observable via structlog without requiring each call site to add logging.
 
 import subprocess
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import structlog
 
@@ -80,7 +81,13 @@ def wait_with_exponential_backoff(
         try:
             if check_fn():
                 return True
-        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, ConnectionError, OSError):
+        except (
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+            PermissionError,
+            ConnectionError,
+            OSError,
+        ):
             # Docker availability checks fail with platform-specific errors:
             # - TimeoutExpired: docker info hangs on unresponsive daemon
             # - FileNotFoundError: Docker CLI binary not in PATH
@@ -89,11 +96,14 @@ def wait_with_exponential_backoff(
             # - OSError: I/O errors (disk full, broken socket)
             pass
         except Exception as e:
-            # Broad handler catches unexpected exceptions (JSONDecodeError from malformed docker info output,
-            # rare transient errors) to prevent crash. Warning log provides visibility for debugging.
-            # Tradeoff: broader exception handling (slower debugging of programming errors) vs defensive
-            # production behavior (no crash on Docker CLI output corruption)
-            logger.warning("check_fn_unexpected_exception", error=str(e), error_type=type(e).__name__)
+            # Broad handler catches unexpected exceptions (JSONDecodeError from malformed
+            # docker info output, rare transient errors) to prevent crash. Warning log
+            # provides visibility for debugging. Tradeoff: broader exception handling
+            # (slower debugging of programming errors) vs defensive production behavior
+            # (no crash on Docker CLI output corruption)
+            logger.warning(
+                "check_fn_unexpected_exception", error=str(e), error_type=type(e).__name__
+            )
             pass
 
         # Final iteration exits without sleeping (prevents exceeding max_wait timeout)

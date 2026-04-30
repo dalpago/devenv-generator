@@ -570,9 +570,7 @@ class TestRunCommandIntegration:
         import subprocess
 
         try:
-            result = subprocess.run(
-                ["docker", "info"], capture_output=True, timeout=10
-            )
+            result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
             if result.returncode != 0:
                 pytest.skip("Docker is not running")
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -593,9 +591,7 @@ class TestRunCommandIntegration:
         assert result.exit_code == 1
         assert "not a directory" in result.output.lower()
 
-    def test_run_detects_python_version_from_file(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_run_detects_python_version_from_file(self, runner: CliRunner, tmp_path: Path) -> None:
         """Run should detect Python version from .python-version."""
         project = tmp_path / "project"
         project.mkdir()
@@ -626,17 +622,13 @@ class TestLifecycleWorkflows:
         import subprocess
 
         try:
-            result = subprocess.run(
-                ["docker", "info"], capture_output=True, timeout=10
-            )
+            result = subprocess.run(["docker", "info"], capture_output=True, timeout=10)
             if result.returncode != 0:
                 pytest.skip("Docker is not running")
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pytest.skip("Docker not available")
 
-    def test_complete_lifecycle_workflow_mocked(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
+    def test_complete_lifecycle_workflow_mocked(self, runner: CliRunner, tmp_path: Path) -> None:
         """Test complete lifecycle with mocked Docker commands.
 
         This tests the CLI orchestration without requiring actual Docker.

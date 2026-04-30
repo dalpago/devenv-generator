@@ -637,9 +637,7 @@ class TestSandboxGenerator:
         assert ".claude.json-host" in content
         assert "mcpServers" in content
 
-    def test_devenv_start_contains_ssh_section_when_enabled(
-        self, tmp_path: Path
-    ) -> None:
+    def test_devenv_start_contains_ssh_section_when_enabled(self, tmp_path: Path) -> None:
         """Rendered devenv-start.sh contains SSH setup when ssh_keys is enabled."""
         from mirustech.devenv_generator.generator import SandboxGenerator
         from mirustech.devenv_generator.models import MountsConfig, MountSpec

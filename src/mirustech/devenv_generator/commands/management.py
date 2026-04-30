@@ -115,8 +115,14 @@ def _is_sandbox_running(name: str, sandbox_dir: Path) -> bool:
     try:
         result = run_command(
             [
-                "docker", "compose", "-p", compose_project_name(name),
-                "ps", "-q", "--status", "running",
+                "docker",
+                "compose",
+                "-p",
+                compose_project_name(name),
+                "ps",
+                "-q",
+                "--status",
+                "running",
             ],
             cwd=sandbox_dir,
         )

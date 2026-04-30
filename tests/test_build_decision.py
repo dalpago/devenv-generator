@@ -1,12 +1,10 @@
 """Tests for BuildDecisionUseCase."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from mirustech.devenv_generator.application.use_cases.build_decision import (
-    BuildDecisionResult,
     BuildDecisionUseCase,
 )
 from mirustech.devenv_generator.application.use_cases.build_or_pull import BuildOrPullResult
@@ -57,15 +55,21 @@ def sandbox_dir(tmp_path):
 class TestBuildDecisionUseCase:
     """Tests for BuildDecisionUseCase."""
 
-    def test_no_image_triggers_build(
-        self, mock_profile, mount_specs, sandbox_dir
-    ):
+    def test_no_image_triggers_build(self, mock_profile, mount_specs, sandbox_dir):
         """Test that missing image triggers a build."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"):
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+        ):
             # No image exists
             mock_run.return_value = Mock(stdout="")
             mock_hash.return_value = "abc123"
@@ -96,9 +100,17 @@ class TestBuildDecisionUseCase:
         build_hash_path = sandbox_dir / ".devcontainer" / ".build-hash"
         build_hash_path.write_text("abc123")
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"):
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+        ):
             # Image exists
             mock_run.return_value = Mock(stdout="image-id-123")
             # Hash unchanged
@@ -130,9 +142,17 @@ class TestBuildDecisionUseCase:
         build_hash_path = sandbox_dir / ".devcontainer" / ".build-hash"
         build_hash_path.write_text("old-hash")
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"):
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+        ):
             # Image exists
             mock_run.return_value = Mock(stdout="image-id-123")
             # Hash changed
@@ -154,15 +174,21 @@ class TestBuildDecisionUseCase:
             assert result.auto_no_cache is True
             assert result.image_spec is None
 
-    def test_missing_build_hash_forces_rebuild(
-        self, mock_profile, mount_specs, sandbox_dir
-    ):
+    def test_missing_build_hash_forces_rebuild(self, mock_profile, mount_specs, sandbox_dir):
         """Test that missing build hash forces rebuild with --no-cache."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"):
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+        ):
             # Image exists
             mock_run.return_value = Mock(stdout="image-id-123")
             mock_hash.return_value = "abc123"
@@ -183,9 +209,7 @@ class TestBuildDecisionUseCase:
             assert result.auto_no_cache is True
             assert result.image_spec is None
 
-    def test_user_no_cache_flag_respected(
-        self, mock_profile, mount_specs, sandbox_dir
-    ):
+    def test_user_no_cache_flag_respected(self, mock_profile, mount_specs, sandbox_dir):
         """Test that user --no-cache flag is respected."""
         use_case = BuildDecisionUseCase()
 
@@ -193,9 +217,17 @@ class TestBuildDecisionUseCase:
         build_hash_path = sandbox_dir / ".devcontainer" / ".build-hash"
         build_hash_path.write_text("abc123")
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"):
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+        ):
             # Image exists, config unchanged
             mock_run.return_value = Mock(stdout="image-id-123")
             mock_hash.return_value = "abc123"
@@ -228,10 +260,20 @@ class TestBuildDecisionUseCase:
             tag="abc123",
         )
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase") as mock_use_case:
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ) as mock_generator,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase"
+            ) as mock_use_case,
+        ):
             # Image exists locally
             mock_run.return_value = Mock(stdout="image-id-123")
             mock_hash.return_value = "abc123"
@@ -265,10 +307,20 @@ class TestBuildDecisionUseCase:
         """Test that failed registry pull falls back to build."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase") as mock_use_case:
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ) as mock_generator,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase"
+            ) as mock_use_case,
+        ):
             # No image exists
             mock_run.return_value = Mock(stdout="")
             mock_hash.return_value = "abc123"
@@ -311,10 +363,20 @@ class TestBuildDecisionUseCase:
         """Test that --no-registry flag disables registry."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"), \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase") as mock_use_case:
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ),
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.BuildOrPullImageUseCase"
+            ) as mock_use_case,
+        ):
             # Image exists
             mock_run.return_value = Mock(stdout="image-id-123")
             mock_hash.return_value = "abc123"
@@ -340,15 +402,21 @@ class TestBuildDecisionUseCase:
             # BuildOrPullImageUseCase should not be called
             mock_use_case.return_value.try_pull.assert_not_called()
 
-    def test_generator_called_with_correct_parameters(
-        self, mock_profile, mount_specs, sandbox_dir
-    ):
+    def test_generator_called_with_correct_parameters(self, mock_profile, mount_specs, sandbox_dir):
         """Test that SandboxGenerator is called with correct parameters."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator:
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ) as mock_generator,
+        ):
             # No image exists
             mock_run.return_value = Mock(stdout="")
             mock_hash.return_value = "abc123"
@@ -375,15 +443,21 @@ class TestBuildDecisionUseCase:
             # Verify generate was called
             mock_generator.return_value.generate.assert_called_once_with(sandbox_dir)
 
-    def test_generator_respects_no_host_config(
-        self, mock_profile, mount_specs, sandbox_dir
-    ):
+    def test_generator_respects_no_host_config(self, mock_profile, mount_specs, sandbox_dir):
         """Test that no_host_config is properly passed to generator."""
         use_case = BuildDecisionUseCase()
 
-        with patch("mirustech.devenv_generator.application.use_cases.build_decision.run_command") as mock_run, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash") as mock_hash, \
-             patch("mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator") as mock_generator:
+        with (
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.run_command"
+            ) as mock_run,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.compute_build_hash"
+            ) as mock_hash,
+            patch(
+                "mirustech.devenv_generator.application.use_cases.build_decision.SandboxGenerator"
+            ) as mock_generator,
+        ):
             # No image exists
             mock_run.return_value = Mock(stdout="")
             mock_hash.return_value = "abc123"

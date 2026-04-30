@@ -23,7 +23,6 @@ from mirustech.devenv_generator.cli import main
 from mirustech.devenv_generator.generator import SandboxGenerator
 from mirustech.devenv_generator.models import MountSpec, ProfileConfig, PythonConfig
 
-
 # --- Fixtures ---
 
 
@@ -154,9 +153,7 @@ def minimal_sandbox(
 
 
 @pytest.fixture
-def built_sandbox(
-    docker_available: None, minimal_sandbox: Path, unique_sandbox_name: str
-) -> Path:
+def built_sandbox(docker_available: None, minimal_sandbox: Path, unique_sandbox_name: str) -> Path:
     """Build the sandbox image (ready for running)."""
     result = subprocess.run(
         ["docker", "compose", "-p", unique_sandbox_name, "build"],
@@ -208,7 +205,7 @@ def _stop_container(sandbox_name: str, sandbox_dir: Path) -> None:
 def _exec_in_container(sandbox_name: str, sandbox_dir: Path, command: list[str]) -> str:
     """Execute command in running container and return output."""
     result = subprocess.run(
-        ["docker", "compose", "-p", sandbox_name, "exec", "-T", "dev"] + command,
+        ["docker", "compose", "-p", sandbox_name, "exec", "-T", "dev", *command],
         cwd=sandbox_dir,
         capture_output=True,
         text=True,
@@ -249,7 +246,9 @@ class TestDockerBuild:
             timeout=30,
         )
 
-        assert result.returncode == 0, f"Build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert result.returncode == 0, (
+            f"Build failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
 
     def test_docker_compose_config_valid(
         self, docker_available: None, minimal_sandbox: Path, unique_sandbox_name: str
@@ -320,9 +319,7 @@ class TestContainerLifecycle:
         try:
             _start_container_detached(unique_sandbox_name, built_sandbox)
 
-            output = _exec_in_container(
-                unique_sandbox_name, built_sandbox, ["python", "--version"]
-            )
+            output = _exec_in_container(unique_sandbox_name, built_sandbox, ["python", "--version"])
 
             assert "Python 3.12" in output
         finally:

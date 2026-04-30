@@ -377,9 +377,7 @@ class TestCleanCommand:
             assert result.exit_code == 0
             assert not sandbox_dir.exists()
             # Verify cleanup was called with remove_volumes=True
-            mock_cleanup.assert_called_once_with(
-                "test-sandbox", sandbox_dir, remove_volumes=True
-            )
+            mock_cleanup.assert_called_once_with("test-sandbox", sandbox_dir, remove_volumes=True)
 
 
 class TestStatusCommandWithSandboxes:

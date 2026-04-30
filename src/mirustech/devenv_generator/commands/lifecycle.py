@@ -409,22 +409,37 @@ def _run_sandbox(
             console.print(f"[bold green]Starting shell in {sandbox_name}...[/bold green]")
             console.print("[dim]Press Ctrl+D to exit[/dim]")
             cmd = [
-                "docker", "compose", "-p", compose_project_name(sandbox_name),
-                "run", "--rm", "--service-ports", "dev", "/bin/zsh",
+                "docker",
+                "compose",
+                "-p",
+                compose_project_name(sandbox_name),
+                "run",
+                "--rm",
+                "--service-ports",
+                "dev",
+                "/bin/zsh",
             ]
         else:
             console.print(f"[bold green]Starting Claude Code in {sandbox_name}...[/bold green]")
             console.print("[dim]Installing dependencies and starting Claude...[/dim]")
             cmd = [
-                "docker", "compose", "-p", compose_project_name(sandbox_name),
-                "run", "--rm", "--service-ports", "dev",
+                "docker",
+                "compose",
+                "-p",
+                compose_project_name(sandbox_name),
+                "run",
+                "--rm",
+                "--service-ports",
+                "dev",
             ]
 
         console.print()
 
         # Sentinel: if subprocess.run raises (e.g. docker not in PATH),
         # result is still bound for sys.exit below
-        run_result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(cmd, returncode=1)
+        run_result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            cmd, returncode=1
+        )
         try:
             # subprocess.run keeps Python alive; os.execvp would replace
             # the process, preventing finally-block cleanup of host-side
@@ -776,9 +791,7 @@ def start_sandbox(name: str | None, detach: bool, shell: bool, no_cache: bool) -
     config = load_profile_by_name("default")
 
     if config.mcp.enable_serena:
-        _start_serena_server(
-            port=config.mcp.serena_port, no_browser=not config.mcp.serena_browser
-        )
+        _start_serena_server(port=config.mcp.serena_port, no_browser=not config.mcp.serena_browser)
     _start_gpg_forwarder()
     _export_keychain_credentials()
 
