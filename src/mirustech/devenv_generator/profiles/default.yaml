@@ -58,7 +58,6 @@ system_packages:
   - tree
   - less
   - htop
-  - eza
   - fzf
   - age
   - sqlite3

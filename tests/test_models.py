@@ -217,7 +217,6 @@ class TestBundledProfiles:
     def test_default_yaml_system_packages(self) -> None:
         """default.yaml system_packages should include expected tools."""
         config = get_bundled_profile("default")
-        assert "eza" in config.system_packages
         assert "fzf" in config.system_packages
         assert "age" in config.system_packages
         assert "sqlite3" in config.system_packages

@@ -6,9 +6,8 @@ FROM python:{{ profile.python.version }}-slim
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-# eza is excluded here — it lives in bookworm-backports and is installed below
 RUN apt-get update && apt-get install -y --no-install-recommends \
-{% for pkg in profile.system_packages if pkg != 'eza' %}
+{% for pkg in profile.system_packages %}
     {{ pkg }} \
 {% endfor %}
 {% if 'gnupg' in profile.system_packages %}
@@ -22,22 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     tini \
     && rm -rf /var/lib/apt/lists/*
-
-{% if 'eza' in profile.system_packages %}
-# eza is not in Debian bookworm (added in trixie) and not in bookworm-backports.
-# Install the upstream binary tarball; eza maintainers ship aarch64 and x86_64 builds.
-RUN ARCH=$(dpkg --print-architecture) \
-    && case "$ARCH" in \
-         arm64) EZA_ARCH=aarch64-unknown-linux-gnu ;; \
-         amd64) EZA_ARCH=x86_64-unknown-linux-gnu ;; \
-         *) echo "Unsupported arch for eza: $ARCH" >&2; exit 1 ;; \
-       esac \
-    && curl -fsSL "https://github.com/eza-community/eza/releases/download/v0.20.24/eza_${EZA_ARCH}.tar.gz" \
-         -o /tmp/eza.tar.gz \
-    && tar -xzf /tmp/eza.tar.gz -C /usr/local/bin \
-    && rm /tmp/eza.tar.gz \
-    && chmod +x /usr/local/bin/eza
-{% endif %}
 
 {% if profile.playwright %}
 # Install Playwright browser dependencies for Chromium/Firefox/WebKit
@@ -209,10 +192,17 @@ RUN set -e; \
 # .tar.gz, so it is handled here via its own installer rather than via github_releases.
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 {% if profile.shell.starship_preset %}
-# Write preset at build time so the container is self-contained; no host config dependency.
-RUN starship preset {{ profile.shell.starship_preset }} -o ~/.config/starship.toml
+# Write preset and zshrc init into the developer user's home (not root's).
+# Earlier versions used `~` which expanded to /root because these RUN steps
+# execute as root, so neither the preset nor the init line ever reached
+# /home/$USERNAME, leaving starship invisible in the user's shell.
+RUN install -d -o $USER_UID -g $USER_GID /home/$USERNAME/.config \
+    && starship preset {{ profile.shell.starship_preset }} \
+         -o /home/$USERNAME/.config/starship.toml \
+    && chown $USER_UID:$USER_GID /home/$USERNAME/.config/starship.toml
 {% endif %}
-RUN echo 'eval "$(starship init zsh)"' >> ~/.zshrc
+RUN echo 'eval "$(starship init zsh)"' >> /home/$USERNAME/.zshrc \
+    && chown $USER_UID:$USER_GID /home/$USERNAME/.zshrc
 {% endif %}
 
 {% if profile.dotfiles.chezmoi_repo %}

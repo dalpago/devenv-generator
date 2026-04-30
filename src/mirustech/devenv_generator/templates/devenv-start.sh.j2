@@ -124,6 +124,43 @@ TOKENREFRESH
     if [ -f /home/developer/.claude-host/CLAUDE.md ]; then
         cp /home/developer/.claude-host/CLAUDE.md /home/developer/.claude/
     fi
+    # Merge host settings.json into container's settings.json. Container ships a
+    # permissive baseline (broad permissions.allow, enableAllProjectMcpServers)
+    # so the sandbox is unrestricted; host settings carry behavioral preferences
+    # (defaultMode like "auto"/"acceptEdits", env vars, alwaysThinkingEnabled,
+    # effortLevel) that would otherwise be silently dropped on container build.
+    # Strategy: host wins for behavioral keys; container's permissions.allow
+    # is the union of both so we never tighten beyond the sandbox baseline.
+    if [ -f /home/developer/.claude-host/settings.json ]; then
+        python3 << 'SETTINGSMERGE' 2>/dev/null || true
+import json
+
+host_path = '/home/developer/.claude-host/settings.json'
+container_path = '/home/developer/.claude/settings.json'
+
+with open(host_path) as f:
+    host = json.load(f)
+try:
+    with open(container_path) as f:
+        container = json.load(f)
+except Exception:
+    container = {}
+
+merged = {**host, **{k: v for k, v in container.items() if k not in host}}
+# Behavioral keys: host wins (already covered by spread above for keys host has).
+# Permissions: union the allow lists so we never drop the sandbox's broad baseline.
+host_allow = host.get('permissions', {}).get('allow', [])
+cont_allow = container.get('permissions', {}).get('allow', [])
+merged_allow = list(dict.fromkeys([*cont_allow, *host_allow]))
+merged.setdefault('permissions', {})['allow'] = merged_allow
+# Force enableAllProjectMcpServers on — the container is isolated.
+merged['enableAllProjectMcpServers'] = True
+
+with open(container_path, 'w') as f:
+    json.dump(merged, f, indent=2)
+print(f"  Merged host settings.json (defaultMode={merged.get('defaultMode')!r})")
+SETTINGSMERGE
+    fi
     # Copy MCP plugins directory, filtering out external plugins that need auth
     # tokens unavailable in the container (OAuth, API keys, etc.)
     if [ -d /home/developer/.claude-host/plugins ]; then
