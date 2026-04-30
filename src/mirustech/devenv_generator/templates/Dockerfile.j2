@@ -6,8 +6,9 @@ FROM python:{{ profile.python.version }}-slim
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
+# eza is excluded here — it lives in bookworm-backports and is installed below
 RUN apt-get update && apt-get install -y --no-install-recommends \
-{% for pkg in profile.system_packages %}
+{% for pkg in profile.system_packages if pkg != 'eza' %}
     {{ pkg }} \
 {% endfor %}
 {% if 'gnupg' in profile.system_packages %}
@@ -21,6 +22,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     tini \
     && rm -rf /var/lib/apt/lists/*
+
+{% if 'eza' in profile.system_packages %}
+# eza is not in Debian bookworm main; pull from bookworm-backports
+RUN echo "deb http://deb.debian.org/debian bookworm-backports main" \
+        > /etc/apt/sources.list.d/backports.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends -t bookworm-backports eza \
+    && rm -rf /var/lib/apt/lists/*
+{% endif %}
 
 {% if profile.playwright %}
 # Install Playwright browser dependencies for Chromium/Firefox/WebKit
