@@ -88,7 +88,7 @@ network:
   allowed_domains: []
 
 mounts:
-  gitconfig: false
+  gitconfig: true
   ssh_keys: true
   claude_config: volume
   happy_config: true
