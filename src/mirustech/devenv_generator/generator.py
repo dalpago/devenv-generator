@@ -542,6 +542,7 @@ class SandboxGenerator(BaseGenerator):
             user_uid=user_uid,
             user_gid=user_gid,
             tea_config_host_path=str(host_tea_config_dir()),
+            host_has_netrc=(Path.home() / ".netrc").exists(),
         )
 
     def render_env_example(self) -> str:

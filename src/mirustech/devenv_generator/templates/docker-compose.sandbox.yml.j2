@@ -47,6 +47,13 @@ services:
 {% endif %}
       # Git configuration from host
       - ~/.gitconfig:/home/developer/.gitconfig:ro
+{% if host_has_netrc %}
+      # netrc with HTTPS PATs (e.g. git.mirus-tech.com, git.sgm.internal).
+      # Read-only: sandbox should not modify host credentials. Mounted only when
+      # the host file exists; otherwise Docker would auto-create an empty
+      # root-owned file and silently break git auth.
+      - ~/.netrc:/home/developer/.netrc:ro
+{% endif %}
       # GPG keys for commit signing
       - ~/.gnupg:/home/developer/.gnupg
 {% if profile.mounts.ssh_keys %}
