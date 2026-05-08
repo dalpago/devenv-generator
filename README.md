@@ -484,12 +484,6 @@ pytest tests/test_lifecycle.py
 pytest --cov=src/mirustech/devenv_generator --cov-report=html
 ```
 
-See [TESTING.md](TESTING.md) for detailed testing documentation including:
-- How to run different types of tests
-- Writing new tests
-- Debugging integration tests
-- CI/CD configuration
-
 ### Project Structure
 
 See the Architecture section above for detailed information about:
