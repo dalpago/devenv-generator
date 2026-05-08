@@ -314,7 +314,7 @@ devenv doctor
 ## How It Works
 
 1. **Auto-detects** Python version from `.python-version` or `pyproject.toml`
-2. **Mounts** your project at `/workspace/<project-name>`
+2. **Mounts** your project at `/workspace/<project-name>` and at its real host path (host-path mirror — required for Docker-in-Docker; see below)
 3. **Copies** from host into container:
    - `~/.claude` (OAuth, CLAUDE.md, MCP servers, agents, skills, output-styles)
    - `~/.happy` (Happy Coder config and credentials)
@@ -323,6 +323,27 @@ devenv doctor
 5. **Starts** Claude Code with `--dangerously-skip-permissions`
 
 Container files are stored in `~/.local/share/devenv-sandboxes/<project>/`.
+
+### Docker-in-Docker / sibling containers
+
+The sandbox shares the host's `/var/run/docker.sock`, so `docker run` and `docker compose build` issued from inside the sandbox are served by the **host** Docker daemon. The host daemon only knows host filesystem paths — it has no concept of `/workspace`. To make sibling-container bind mounts and build contexts work, every project mount is exposed at **two** paths inside the sandbox:
+
+- `/workspace/<name>` — the conventional UX path. Use this for editors, scripts, in-sandbox tooling.
+- `<host_path>` (e.g. `/Users/you/Code/myproject`) — the host-path mirror. Use this whenever a Docker command needs to reach the host daemon.
+
+```bash
+# Inside the sandbox, for sibling containers:
+docker run --rm -v /Users/you/Code/myproject/data:/data alpine ls /data   # works
+docker run --rm -v /workspace/myproject/data:/data alpine ls /data        # FAILS
+
+# For docker compose build / docker build with a relative context:
+cd /Users/you/Code/myproject     # not /workspace/myproject
+docker compose build
+```
+
+Both paths are bind mounts of the same host source — anything you write under either is reflected on the host immediately and visible to siblings.
+
+`cow`-mode mounts mirror only the read-only base on the host path; the writable upper layer is sandbox-local tmpfs and is not DinD-shareable.
 
 ## Quick Reference
 
