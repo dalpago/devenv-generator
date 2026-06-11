@@ -36,6 +36,13 @@ class NetworkConfig(BaseModel):
         default_factory=list,
         description="Domains to allowlist when mode is 'restricted'",
     )
+    external_networks: list[str] = Field(
+        default_factory=list,
+        description="Names of pre-existing (external) Docker networks the sandbox "
+        "container should join, enabling service-name DNS to sibling DinD "
+        "containers (e.g. 'jmz-data-gen_api-network'). Sandbox mode only; "
+        "ignored when mode is 'none'.",
+    )
 
     @property
     def effective_allowed_domains(self) -> list[str]:

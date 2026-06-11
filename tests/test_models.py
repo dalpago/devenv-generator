@@ -69,6 +69,16 @@ class TestNetworkConfig:
         config = NetworkConfig(mode="none")
         assert config.mode == "none"
 
+    def test_external_networks_default_empty(self) -> None:
+        """external_networks defaults to an empty list."""
+        config = NetworkConfig()
+        assert config.external_networks == []
+
+    def test_external_networks_accepts_names(self) -> None:
+        """external_networks stores the provided network names verbatim."""
+        config = NetworkConfig(external_networks=["jmz-data-gen_api-network"])
+        assert config.external_networks == ["jmz-data-gen_api-network"]
+
     def test_effective_allowed_domains_returns_defaults_when_empty(self) -> None:
         """Should return sensible defaults when no domains specified."""
         config = NetworkConfig(mode="restricted")
