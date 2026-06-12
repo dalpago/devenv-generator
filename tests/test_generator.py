@@ -708,6 +708,86 @@ class TestSandboxGenerator:
         # The exact behavior depends on template implementation
         assert "services:" in content
 
+    def test_render_compose_includes_external_network(self) -> None:
+        """Sandbox compose attaches the dev service to declared external networks."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import MountSpec, NetworkConfig
+
+        profile = ProfileConfig(
+            name="net-test",
+            network=NetworkConfig(external_networks=["jmz-data-gen_api-network"]),
+        )
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=[MountSpec(host_path=Path("/home/user/project"), mode="rw")],
+            sandbox_name="net-test",
+        )
+        content = generator.render_docker_compose()
+
+        # Service joins its own default network plus the external one.
+        assert "networks:" in content
+        assert "      - default" in content
+        assert "- jmz-data-gen_api-network" in content
+        # Top-level declaration marks it external (must pre-exist).
+        assert "external: true" in content
+
+    def test_render_compose_no_networks_block_without_external(
+        self, profile: ProfileConfig, mounts: list
+    ) -> None:
+        """No external-network declaration is emitted when the list is empty."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+
+        generator = SandboxGenerator(
+            profile=profile, mounts=mounts, sandbox_name="test-sandbox"
+        )
+        content = generator.render_docker_compose()
+
+        assert "external: true" not in content
+
+    def test_render_compose_warns_external_networks_with_restricted(self, capsys) -> None:
+        """Warning logged when external_networks set with restricted mode."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import MountSpec, NetworkConfig
+
+        profile = ProfileConfig(
+            name="restricted-net-test",
+            network=NetworkConfig(
+                mode="restricted", external_networks=["jmz-data-gen_api-network"]
+            ),
+        )
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=[MountSpec(host_path=Path("/home/user/project"), mode="rw")],
+            sandbox_name="restricted-net-test",
+        )
+
+        generator.render_docker_compose()
+
+        # structlog outputs to stdout, check for warning message
+        captured = capsys.readouterr()
+        assert "iptables allowlist may block" in captured.out
+
+    def test_render_compose_skips_external_networks_when_mode_none(self) -> None:
+        """external_networks is ignored under mode 'none' (cannot attach networks)."""
+        from mirustech.devenv_generator.generator import SandboxGenerator
+        from mirustech.devenv_generator.models import MountSpec, NetworkConfig
+
+        profile = ProfileConfig(
+            name="none-net-test",
+            network=NetworkConfig(
+                mode="none", external_networks=["jmz-data-gen_api-network"]
+            ),
+        )
+        generator = SandboxGenerator(
+            profile=profile,
+            mounts=[MountSpec(host_path=Path("/home/user/project"), mode="rw")],
+            sandbox_name="none-net-test",
+        )
+        content = generator.render_docker_compose()
+
+        assert 'network_mode: "none"' in content
+        assert "external: true" not in content
+
 
 class TestChezmoi:
     """Tests for chezmoi dotfiles integration in generated files."""

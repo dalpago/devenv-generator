@@ -523,6 +523,22 @@ class SandboxGenerator(BaseGenerator):
                 message="Port mappings configured but network mode is 'none' - "
                 "ports will not be accessible",
             )
+        if self.profile.network.external_networks and self.profile.network.mode == "none":
+            logger.warning(
+                "external_networks_with_network_none",
+                message="external_networks configured but network mode is 'none' - "
+                "the sandbox cannot join external networks; they will be ignored",
+            )
+        if (
+            self.profile.network.external_networks
+            and self.profile.network.mode == "restricted"
+        ):
+            logger.warning(
+                "external_networks_with_restricted",
+                message="external_networks configured with network mode 'restricted' - "
+                "the iptables allowlist may block traffic to sibling containers; "
+                "use mode 'full' or add their subnet to allowed_domains",
+            )
 
         template = self.env.get_template("docker-compose.sandbox.yml.j2")
         has_cow_mounts = any(m.mode == "cow" for m in self.mounts)

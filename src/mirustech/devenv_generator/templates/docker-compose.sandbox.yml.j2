@@ -175,7 +175,28 @@ services:
     cap_add:
       - NET_ADMIN
 {% endif %}
+{% if profile.network.external_networks and profile.network.mode != 'none' %}
+    # Join pre-existing external networks so sibling containers (created by the
+    # host daemon via the shared docker.sock) resolve by service name, e.g.
+    # metadata-api:8000. 'default' is kept so the sandbox keeps its own network
+    # for outbound traffic and any compose-managed peers.
+    networks:
+      - default
+{% for net in profile.network.external_networks %}
+      - {{ net }}
+{% endfor %}
+{% endif %}
 
 volumes:
   claude-config:
     name: devenv-{{ sandbox_name }}-claude-config
+{% if profile.network.external_networks and profile.network.mode != 'none' %}
+
+networks:
+  # external: true → Compose will not create this; it must already exist
+  # (created by the sibling stack). The key is the real docker network name.
+{% for net in profile.network.external_networks %}
+  {{ net }}:
+    external: true
+{% endfor %}
+{% endif %}
