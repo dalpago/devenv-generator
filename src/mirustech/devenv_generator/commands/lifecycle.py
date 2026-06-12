@@ -548,6 +548,14 @@ def _run_sandbox(
     default=False,
     help="Disable all port mappings from profile",
 )
+@click.option(
+    "--network",
+    "external_networks",
+    multiple=True,
+    help="Attach the sandbox to an existing external Docker network (repeatable). "
+    "Lets the sandbox reach sibling containers by service name, e.g. "
+    "--network jmz-data-gen_api-network.",
+)
 def run(
     paths: tuple[str, ...],
     profile: str,
@@ -565,6 +573,7 @@ def run(
     no_cache: bool,
     expose_ports: tuple[str, ...],
     no_ports: bool,
+    external_networks: tuple[str, ...],
 ) -> None:
     """Run a sandbox with the specified project paths.
 
@@ -622,6 +631,10 @@ def run(
         runtime_ports = [_parse_port_spec(spec) for spec in expose_ports]
         config.ports.ports.extend(runtime_ports)
 
+    # Apply external-network overrides (runtime additions to the profile's list)
+    if external_networks:
+        config.network.external_networks.extend(external_networks)
+
     # Check for port conflicts before starting
     if config.ports.ports:
         _check_port_conflicts(config.ports.ports, sandbox_name)
@@ -658,6 +671,11 @@ def run(
     for spec in mount_specs:
         mode_str = {"rw": "", "ro": " (ro)", "cow": " (cow)"}[spec.mode]
         console.print(f"  {spec.host_path} → {spec.container_path}{mode_str}")
+
+    if config.network.external_networks:
+        console.print("[dim]Networks:[/dim]")
+        for net in config.network.external_networks:
+            console.print(f"  {net} (external)")
 
     if effective_start_serena:
         _start_serena_server(port=effective_serena_port, no_browser=not effective_serena_browser)

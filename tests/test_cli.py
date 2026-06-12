@@ -332,6 +332,21 @@ class TestStartCommand:
         assert "--shell" in result.output
 
 
+class TestRunCommandOptions:
+    """Tests for `devenv run` command-line options."""
+
+    @pytest.fixture
+    def runner(self) -> CliRunner:
+        """Create a CLI runner."""
+        return CliRunner()
+
+    def test_run_help_lists_network_option(self, runner: CliRunner) -> None:
+        """`devenv run --help` documents the --network option."""
+        result = runner.invoke(main, ["run", "--help"])
+        assert result.exit_code == 0
+        assert "--network" in result.output
+
+
 class TestProfilesCommand:
     """Tests for profiles commands."""
 
