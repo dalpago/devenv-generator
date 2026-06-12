@@ -345,6 +345,17 @@ Both paths are bind mounts of the same host source — anything you write under 
 
 `cow`-mode mounts mirror only the read-only base on the host path; the writable upper layer is sandbox-local tmpfs and is not DinD-shareable.
 
+To reach **already-running** sibling containers by service name (instead of via host-path bind mounts), attach the sandbox to their Docker network with `--network`:
+
+```bash
+# Sibling stack 'jmz-data-gen' is already up on network jmz-data-gen_api-network
+devenv run --network jmz-data-gen_api-network ~/Code/myproject
+# Inside the sandbox, service-name DNS now resolves:
+curl http://metadata-api:8000/health
+```
+
+The network must already exist (it is declared `external`). A container's network membership is fixed at creation, so pass `--network` at `devenv run` time — repeat the flag for multiple networks. Ignored when the profile's network mode is `none`.
+
 ## Quick Reference
 
 ```bash
@@ -371,6 +382,7 @@ Options:
   -n, --name NAME            Custom sandbox name
   --expose-port PORT         Expose port at startup (can be used multiple times)
   --no-ports                 Disable all ports (overrides profile configuration)
+  --network NAME             Attach to an existing external Docker network (repeatable)
   --start-serena/--no-serena Start/disable Serena MCP server (default: enabled)
   --serena-port PORT         Port for Serena (default: from profile, usually 9121)
   --serena-browser           Open browser dashboard (default: disabled)
