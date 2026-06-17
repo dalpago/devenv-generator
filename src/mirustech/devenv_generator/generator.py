@@ -529,10 +529,7 @@ class SandboxGenerator(BaseGenerator):
                 message="external_networks configured but network mode is 'none' - "
                 "the sandbox cannot join external networks; they will be ignored",
             )
-        if (
-            self.profile.network.external_networks
-            and self.profile.network.mode == "restricted"
-        ):
+        if self.profile.network.external_networks and self.profile.network.mode == "restricted":
             logger.warning(
                 "external_networks_with_restricted",
                 message="external_networks configured with network mode 'restricted' - "

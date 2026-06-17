@@ -737,9 +737,7 @@ class TestSandboxGenerator:
         """No external-network declaration is emitted when the list is empty."""
         from mirustech.devenv_generator.generator import SandboxGenerator
 
-        generator = SandboxGenerator(
-            profile=profile, mounts=mounts, sandbox_name="test-sandbox"
-        )
+        generator = SandboxGenerator(profile=profile, mounts=mounts, sandbox_name="test-sandbox")
         content = generator.render_docker_compose()
 
         assert "external: true" not in content
@@ -774,9 +772,7 @@ class TestSandboxGenerator:
 
         profile = ProfileConfig(
             name="none-net-test",
-            network=NetworkConfig(
-                mode="none", external_networks=["jmz-data-gen_api-network"]
-            ),
+            network=NetworkConfig(mode="none", external_networks=["jmz-data-gen_api-network"]),
         )
         generator = SandboxGenerator(
             profile=profile,
