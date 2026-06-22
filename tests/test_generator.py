@@ -156,6 +156,31 @@ class TestDevEnvGenerator:
         assert "SHELL=/bin/zsh" in content
         assert "-s /bin/zsh" in content  # useradd shell option
 
+    def test_render_dockerfile_docker_cli_includes_buildx(self) -> None:
+        """Docker CLI install bundles the buildx plugin (needed for BuildKit-only
+        Dockerfiles, e.g. --mount=type=secret) so docker-in-docker builds work."""
+        profile = ProfileConfig(
+            name="test",
+            python=PythonConfig(version="3.12"),
+            docker_cli=True,
+        )
+        content = DevEnvGenerator(profile, project_name="test-project").render_dockerfile()
+
+        assert "docker-ce-cli" in content
+        assert "docker-compose-plugin" in content
+        assert "docker-buildx-plugin" in content
+
+    def test_render_dockerfile_no_docker_cli_omits_buildx(self) -> None:
+        """No docker tooling is installed when docker_cli is disabled."""
+        profile = ProfileConfig(
+            name="test",
+            python=PythonConfig(version="3.12"),
+            docker_cli=False,
+        )
+        content = DevEnvGenerator(profile, project_name="test-project").render_dockerfile()
+
+        assert "docker-buildx-plugin" not in content
+
     def test_render_docker_compose(self, generator: DevEnvGenerator) -> None:
         """Should render docker-compose.yml with correct content."""
         content = generator.render_docker_compose()
