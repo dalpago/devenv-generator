@@ -1,19 +1,6 @@
 #!/bin/bash
 set -e
 
-# Fix MCP plugin paths: Claude plugins store absolute host paths that don't exist in container
-# Create symlink so /Users/<host-user>/.claude -> /home/developer/.claude
-MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
-if [ -f "$MARKETPLACES_JSON" ]; then
-    # Extract host username from installLocation path (e.g., /Users/ziefle/.claude/...)
-    HOST_USER=$(grep -o '"/Users/[^/]*/' "$MARKETPLACES_JSON" 2>/dev/null | head -1 | sed 's|"/Users/||;s|/$||')
-    if [ -n "$HOST_USER" ] && [ "$HOST_USER" != "developer" ]; then
-        echo "Creating symlink for MCP plugin paths: /Users/$HOST_USER -> /home/developer"
-        mkdir -p /Users 2>/dev/null || true
-        ln -sfn /home/developer "/Users/$HOST_USER" 2>/dev/null || true
-    fi
-fi
-
 {% if profile.mounts.ssh_keys %}
 # Copy SSH keys and config from read-only mount to writable directory
 if [ -d /home/developer/.ssh-host ]; then
@@ -207,13 +194,26 @@ SETTINGSMERGE
             done
         fi
 
-        # Fix absolute paths in known_marketplaces.json (host paths don't exist in container)
-        MARKETPLACES_JSON="/home/developer/.claude/plugins/known_marketplaces.json"
-        if [ -f "$MARKETPLACES_JSON" ]; then
-            echo "Fixing marketplace paths for container..."
-            # Replace any /Users/<username>/.claude with /home/developer/.claude
-            sed -i 's|/Users/[^/]*/\.claude|/home/developer/.claude|g' "$MARKETPLACES_JSON"
+        # Copy plugin cache (installed plugin files) and data directories
+        # installed_plugins.json references installPath entries inside cache/ — without
+        # it Claude Code finds no files for the registered plugins and errors on startup.
+        if [ -d /home/developer/.claude-host/plugins/cache ]; then
+            cp -r /home/developer/.claude-host/plugins/cache /home/developer/.claude/plugins/
         fi
+        if [ -d /home/developer/.claude-host/plugins/data ]; then
+            cp -r /home/developer/.claude-host/plugins/data /home/developer/.claude/plugins/
+        fi
+
+        # Fix absolute paths in known_marketplaces.json and installed_plugins.json
+        # (host paths like /Users/<user>/.claude don't exist in the container)
+        for json_file in \
+            /home/developer/.claude/plugins/known_marketplaces.json \
+            /home/developer/.claude/plugins/installed_plugins.json; do
+            if [ -f "$json_file" ]; then
+                echo "Fixing plugin paths in $(basename "$json_file")..."
+                sed -i 's|/Users/[^/]*/\.claude|/home/developer/.claude|g' "$json_file"
+            fi
+        done
 
         # List copied MCP servers for debugging
         echo "MCP servers copied:"
