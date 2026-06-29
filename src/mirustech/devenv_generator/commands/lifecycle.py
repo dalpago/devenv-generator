@@ -384,7 +384,7 @@ def _run_sandbox(
             build_cmd.append("--no-cache")
             console.print("[dim]  (forcing rebuild without cache)[/dim]")
         console.print()  # Add blank line before build output
-        build_result = run_command(build_cmd, cwd=sandbox_dir, timeout=600, stream_output=True)
+        build_result = run_command(build_cmd, cwd=sandbox_dir, timeout=1800, stream_output=True)
         console.print()  # Add blank line after build output
         if build_result.returncode != 0:
             console.print("[red]Build failed - check output above for details[/red]")
