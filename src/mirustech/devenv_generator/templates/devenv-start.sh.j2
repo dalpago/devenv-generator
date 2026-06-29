@@ -198,10 +198,13 @@ SETTINGSMERGE
         # installed_plugins.json references installPath entries inside cache/ — without
         # it Claude Code finds no files for the registered plugins and errors on startup.
         if [ -d /home/developer/.claude-host/plugins/cache ]; then
-            cp -r /home/developer/.claude-host/plugins/cache /home/developer/.claude/plugins/
+            # Git object dirs are created 0555 by git; make them writable before
+            # copying so subsequent container starts don't get Permission denied.
+            chmod -R u+w /home/developer/.claude/plugins/cache/ 2>/dev/null || true
+            cp -r --no-preserve=mode,ownership /home/developer/.claude-host/plugins/cache /home/developer/.claude/plugins/
         fi
         if [ -d /home/developer/.claude-host/plugins/data ]; then
-            cp -r /home/developer/.claude-host/plugins/data /home/developer/.claude/plugins/
+            cp -r --no-preserve=mode,ownership /home/developer/.claude-host/plugins/data /home/developer/.claude/plugins/
         fi
 
         # Fix absolute paths in known_marketplaces.json and installed_plugins.json
@@ -243,23 +246,27 @@ SETTINGSMERGE
 fi
 
 # Copy Happy Coder config from host (if mounted at .happy-host)
-# Only copy credentials and settings — skip host-specific runtime state
-# (daemon.state.json, lock files, logs, tmp) which would confuse the
-# container's own Happy Coder daemon.
+# Copy only access.key (shared auth credentials) — never copy settings.json
+# from the host because it carries the host's machineId. Each container must
+# register as a distinct machine so the phone app can tell them apart.
+# A fresh settings.json with a hostname-derived UUID is generated instead.
 if [ -d /home/developer/.happy-host ]; then
     echo "Copying Happy Coder config from host..."
-    copied=0
-    for f in access.key settings.json; do
-        if [ -f "/home/developer/.happy-host/$f" ]; then
-            cp -a "/home/developer/.happy-host/$f" "/home/developer/.happy/$f"
-            chmod u+w "/home/developer/.happy/$f"
-            copied=$((copied + 1))
-        fi
-    done
-    if [ "$copied" -gt 0 ]; then
-        echo "  Copied $copied config files (access.key, settings.json)"
+    if [ -f /home/developer/.happy-host/access.key ]; then
+        cp -a /home/developer/.happy-host/access.key /home/developer/.happy/access.key
+        chmod u+w /home/developer/.happy/access.key
+        python3 << 'HAPPYSETUP' 2>/dev/null || true
+import json, uuid, socket
+
+settings_path = '/home/developer/.happy/settings.json'
+machine_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, socket.gethostname()))
+settings = {"onboardingCompleted": True, "machineId": machine_id}
+with open(settings_path, 'w') as f:
+    json.dump(settings, f, indent=2)
+print(f"  Happy machine ID: {machine_id} (hostname: {socket.gethostname()})")
+HAPPYSETUP
     else
-        echo "  Warning: no Happy Coder config files found on host"
+        echo "  Warning: no Happy Coder access.key found on host"
     fi
 fi
 
@@ -420,9 +427,14 @@ if [ -d "$dir/.venv/bin" ]; then
     export PATH="$dir/.venv/bin:$PATH"
 fi
 
-# If no command provided, start Claude in YOLO mode
+# If no command provided, start Claude. Use happy when available so the
+# session is reachable from the phone via Happy Coder's relay.
 if [ $# -eq 0 ]; then
-    exec claude --permission-mode bypassPermissions
+    if command -v happy &> /dev/null && [ -f /home/developer/.happy/access.key ]; then
+        exec happy --permission-mode bypassPermissions
+    else
+        exec claude --permission-mode bypassPermissions
+    fi
 else
     exec "$@"
 fi
