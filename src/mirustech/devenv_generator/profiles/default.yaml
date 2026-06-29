@@ -74,6 +74,11 @@ github_releases:
 
 node_packages:
   - "@anthropic-ai/claude-code"
+  # Pinned: happy 1.1.10 regresses machine registration (POST /v1/machines returns
+  # 500 on first-time machine create), which breaks phone access from sandboxes
+  # (each sandbox registers a fresh machineId). 1.1.9-beta.0 is the last known-good
+  # build and matches the host. Revisit when a fixed stable ships.
+  - "happy@1.1.9-beta.0"
 
 environment: {}
 

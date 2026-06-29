@@ -810,6 +810,23 @@ class TestSandboxGenerator:
         assert "external: true" not in content
 
 
+class TestHappyPackagePin:
+    """Guard: the default profile must pin the happy CLI to a known-good version."""
+
+    def test_default_profile_pins_happy_version(self) -> None:
+        """happy must be version-pinned, never bare 'happy' (= npm latest).
+
+        happy 1.1.10 regresses machine registration (POST /v1/machines 500 on create),
+        which silently breaks phone access from sandboxes. Pinning is the guard.
+        """
+        profile = get_bundled_profile("default")
+        happy_pkgs = [p for p in profile.node_packages if p == "happy" or p.startswith("happy@")]
+        assert happy_pkgs, "default profile should install happy"
+        assert all("@" in p for p in happy_pkgs), (
+            f"happy must be pinned to a known-good version, got {happy_pkgs}"
+        )
+
+
 class TestChezmoi:
     """Tests for chezmoi dotfiles integration in generated files."""
 
