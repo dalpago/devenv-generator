@@ -29,10 +29,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 {% if profile.network.mode == 'restricted' %}
     iptables \
 {% endif %}
-    nodejs \
-    npm \
     sudo \
     tini \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 from NodeSource (Debian ships v18; happy and modern npm packages require v20+)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 {% if profile.playwright %}
